@@ -3,7 +3,7 @@
 - PDF 업로드, 날짜별·버전별 보관, 페이지 단위 검색
 - 질문하면 근거 페이지와 원문 인용을 함께 답변
 """
-import hashlib, hmac, json, math, os, re, secrets, smtplib, sqlite3, time, urllib.error, urllib.request
+import hashlib, hmac, json, math, os, re, secrets, smtplib, sqlite3, threading, time, urllib.error, urllib.request
 from collections import Counter, defaultdict
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
@@ -125,13 +125,43 @@ def init():
         print("주의: ADMIN_EMAIL / ADMIN_PASSWORD 가 설정되지 않아 관리자 계정이 없어요.")
 
 
+# ---------- 무료 도메인(DuckDNS) 주소 자동 갱신 ----------
+DUCKDNS_DOMAIN = os.getenv("DUCKDNS_DOMAIN", "").strip().removesuffix(".duckdns.org")
+DUCKDNS_TOKEN = os.getenv("DUCKDNS_TOKEN", "").strip()
+DDNS = {"domain": f"{DUCKDNS_DOMAIN}.duckdns.org" if DUCKDNS_DOMAIN else None, "last_at": None, "ok": None}
+
+
+def ddns_loop(stop):
+    """5분마다 DuckDNS에 '이 집의 지금 공인 IP'를 알린다(IP는 DuckDNS가 요청을 보고 알아낸다).
+    가정용 공인 IP는 바뀔 수 있어서, 바뀌어도 도메인 주소로 계속 접속되게 한다."""
+    url = f"https://www.duckdns.org/update?domains={DUCKDNS_DOMAIN}&token={DUCKDNS_TOKEN}&ip="
+    while not stop.is_set():
+        try:
+            with urllib.request.urlopen(url, timeout=15) as r:
+                ok = r.read().decode().strip() == "OK"
+        except Exception:
+            ok = False
+        if ok != DDNS["ok"]:  # 상태가 바뀔 때만 기록 (토큰은 출력하지 않음)
+            print(f"[DuckDNS] {DDNS['domain']} 주소 갱신 {'성공' if ok else '실패 — 도메인 이름과 토큰을 확인해 주세요'}", flush=True)
+        DDNS.update(last_at=now(), ok=ok)
+        stop.wait(300)
+
+
 @asynccontextmanager
 async def lifespan(app):
     init()
+    stop = threading.Event()
+    if DUCKDNS_DOMAIN and DUCKDNS_TOKEN:
+        threading.Thread(target=ddns_loop, args=(stop,), daemon=True).start()
     yield
+    stop.set()
 
 
-app = FastAPI(title="문서 도우미", lifespan=lifespan)
+# API 시험 화면(/docs)은 외부에 공개할 때 끈다 (.env의 API_DOCS=0)
+_api_docs = os.getenv("API_DOCS", "1").strip() != "0"
+app = FastAPI(title="문서 도우미", lifespan=lifespan,
+              docs_url="/docs" if _api_docs else None, redoc_url=None,
+              openapi_url="/openapi.json" if _api_docs else None)
 
 
 # ---------- 메일 / 인증 코드 ----------
@@ -450,7 +480,8 @@ def get_settings(admin=Depends(require_admin)):
         r = c.execute("SELECT s.value, s.updated_at, u.name FROM settings s LEFT JOIN users u ON u.id=s.updated_by "
                       "WHERE s.key='public_url'").fetchone()
     return {"public_url": r["value"] if r else "", "updated_at": r["updated_at"] if r else None,
-            "updated_by": r["name"] if r else None}
+            "updated_by": r["name"] if r else None,
+            "ddns": {"domain": DDNS["domain"], "last_at": DDNS["last_at"], "ok": DDNS["ok"]}}
 
 
 @app.put("/api/admin/settings")

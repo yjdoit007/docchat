@@ -1,0 +1,35 @@
+# docchat 외부 접속용 Caddy 설정
+# - {$DOCCHAT_DOMAIN} 은 run-caddy.ps1 이 server\.env 의 DUCKDNS_DOMAIN 으로 채운다 (예: myteam.duckdns.org)
+# - HTTPS 인증서(Let's Encrypt)는 Caddy가 자동으로 받고 갱신한다. 공유기에서 443번만 열어도 발급된다(TLS-ALPN 방식)
+# - 바깥 요청은 이 노트북의 docchat 서버(127.0.0.1:8000)로만 전달한다
+
+{$DOCCHAT_DOMAIN} {
+	encode gzip
+
+	# 업로드 최대 100MB (서버 제한과 같게)
+	request_body {
+		max_size 100MB
+	}
+
+	reverse_proxy 127.0.0.1:8000 {
+		# 로컬 모델 답변이 1분 넘게 걸릴 수 있어 넉넉히 기다린다
+		transport http {
+			read_timeout 6m
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output file logs/access.log {
+			roll_size 10MiB
+			roll_keep 10
+		}
+	}
+}

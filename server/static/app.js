@@ -474,7 +474,9 @@
   function loadSettings() {
     api("GET", "/api/admin/settings").then(function (s) {
       $("pubu").value = s.public_url || location.origin;
-      $("pubinfo").textContent = s.updated_at ? "마지막 변경: " + day(s.updated_at) + " · " + (s.updated_by || "") : "아직 저장한 적 없어요. 지금 보이는 값은 이 화면을 연 주소예요.";
+      var d = s.ddns || {};
+      $("pubinfo").textContent = (s.updated_at ? "마지막 변경: " + day(s.updated_at) + " · " + (s.updated_by || "") : "아직 저장한 적 없어요. 지금 보이는 값은 이 화면을 연 주소예요.") +
+        (d.domain ? " · 주소 자동 갱신(" + d.domain + "): " + (d.ok == null ? "확인 중" : d.ok ? "정상 (" + day(d.last_at) + ")" : "실패 — .env의 DuckDNS 설정을 확인해 주세요") : " · 주소 자동 갱신: 설정 안 됨");
     }, function (err) { $("pubinfo").textContent = err.message; });
   }
   $("t-set").addEventListener("submit", function (e) {
