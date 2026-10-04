@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pymupdf
+python-multipart
+pyjwt
+argon2-cffi
+anthropic
+python-dotenv

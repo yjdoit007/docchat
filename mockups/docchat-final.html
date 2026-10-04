@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>문서 도우미</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F3F4F7;--panel:#fff;--side:#FAFBFC;--ink:#151A26;--mute:#667088;--line:#DFE3EB;--sel:#E6EAF3;--bot:#EEF0F5;--me:#151A26;--meink:#fff;--amb:#B26A00;--ambbg:#FFE9BE;--mark:#FFE27A;--paper:#FFFEFA;--pink:#2A2A2A;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0C111B;--panel:#141B2B;--side:#111827;--ink:#E6EBF5;--mute:#98A5BF;--line:#26324B;--sel:#22304F;--bot:#1B2438;--me:#E6EBF5;--meink:#101624;--amb:#F5B94A;--ambbg:#3A2C0C;--mark:#6B5412;--paper:#18202F;--pink:#E8E4D8}}
+:root[data-theme="dark"]{--bg:#0C111B;--panel:#141B2B;--side:#111827;--ink:#E6EBF5;--mute:#98A5BF;--line:#26324B;--sel:#22304F;--bot:#1B2438;--me:#E6EBF5;--meink:#101624;--amb:#F5B94A;--ambbg:#3A2C0C;--mark:#6B5412;--paper:#18202F;--pink:#E8E4D8}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans KR",system-ui,sans-serif}
+button,select,input{font:inherit;color:inherit}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--amb);outline-offset:2px}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr)}
+@media(min-width:1000px){.app{grid-template-columns:240px minmax(0,1fr)}}
+/* 문서 목록 */
+.side{display:none;background:var(--side);border-right:1px solid var(--line);padding:14px 10px;overflow-y:auto}
+@media(min-width:1000px){.side{display:block}}
+.side h3{font-size:12px;color:var(--mute);margin:14px 8px 6px;font-weight:500}
+.side h3:first-child{margin-top:2px}
+.doc{display:block;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:14px}
+.doc small{display:block;color:var(--mute);font-size:12px}
+.doc:hover{background:var(--sel)}
+.doc[aria-current="true"]{background:var(--sel);font-weight:700}
+/* 대화 */
+.chat{display:flex;flex-direction:column;min-height:0;background:var(--panel)}
+.msgs>*{width:100%;max-width:760px;margin-inline:auto}
+.msgs>.me{width:auto;margin-inline:auto 0}
+@media(min-width:1000px){.msgs>.me{margin-right:max(0px,calc((100% - 760px)/2))}.msgs>.bot{margin-left:max(0px,calc((100% - 760px)/2))}}
+header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+header b{font-size:16px;margin-right:auto}
+header select{font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px 8px;max-width:46%}
+.theme{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.theme button{background:none;border:0;padding:5px 10px;font-size:13px;color:var(--mute);cursor:pointer}
+.theme button[aria-pressed="true"]{background:var(--ink);color:var(--bg);font-weight:700}
+.msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.m{max-width:90%;padding:10px 14px;border-radius:16px}
+.me{align-self:flex-end;background:var(--me);color:var(--meink);border-bottom-right-radius:4px}
+.bot{align-self:flex-start;background:var(--bot);border-bottom-left-radius:4px}
+.bot p{margin:0 0 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chips button{font-size:13px;color:var(--amb);background:none;border:1px solid var(--amb);border-radius:6px;padding:2px 10px;cursor:pointer}
+.chips button[aria-pressed="true"]{background:var(--amb);color:var(--panel);font-weight:700}
+.hint{font-size:12px;color:var(--mute);margin-top:8px}
+form{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+form input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:10px 16px}
+.send{font-weight:700;color:var(--meink);background:var(--me);border:0;border-radius:999px;padding:0 18px;cursor:pointer}
+/* 인라인 원문 */
+.src{display:none;margin-top:10px}
+.src.on{display:block}
+.src .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--line);border-bottom:0;border-radius:10px 10px 0 0;background:var(--panel);font-size:13px;color:var(--mute)}
+.src .bar b{color:var(--ink);font-size:14px}
+.badge{background:var(--ambbg);color:var(--amb);border-radius:6px;padding:1px 8px;font-size:12px}
+.sheet{background:var(--paper);color:var(--pink);border:1px solid var(--line);border-left:4px solid var(--amb);border-radius:0 0 10px 10px;padding:16px 18px;font:16px/1.85 "Noto Serif KR",serif}
+.sheet h4{margin:0 0 8px;font-size:15px;font-weight:600}
+.sheet p{margin:0 0 8px}
+mark{background:var(--mark);color:inherit;padding:1px 0}
+.no{margin-top:8px;text-align:right;font:12px "Noto Sans KR",sans-serif;color:var(--mute)}
+</style>
+</head>
+<body>
+<div class="app">
+ <aside class="side" aria-label="문서 목록">
+  <h3>문서</h3>
+  <button class="doc" data-i="0" aria-current="true">샘플약관<small>v3 · 2026-03-01 · 312쪽</small></button>
+  <button class="doc" data-i="2" aria-current="false">샘플 운영지침<small>v2 · 2025-09-15 · 84쪽</small></button>
+  <h3>이전 버전</h3>
+  <button class="doc" data-i="0" data-v="v2 · 2025-09-15" aria-current="false">샘플약관 v2<small>2025-09-15</small></button>
+  <button class="doc" data-i="0" data-v="v1 · 2025-01-10" aria-current="false">샘플약관 v1<small>2025-01-10</small></button>
+ </aside>
+
+ <section class="chat" aria-label="대화">
+  <header><b>문서 도우미</b>
+   <select aria-label="기준 버전"><option>최신 버전 기준</option><option>2025-09-15 버전 기준</option><option>2025-01-10 버전 기준</option></select>
+   <div class="theme" role="group" aria-label="화면 테마"><button id="tl" aria-pressed="true">백</button><button id="td" aria-pressed="false">흑</button></div>
+  </header>
+  <div class="msgs">
+   <div class="m bot"><p>등록된 문서에서 근거를 찾아 답해 드려요. 답변마다 출처 페이지를 함께 보여 드립니다.</p></div>
+   <div class="m me">보험금 지급이 늦어지면 지연이자를 줘야 하나요?</div>
+   <div class="m bot">
+    <p>네, 기한을 넘기면 지연이자를 더해 지급해야 해요. 조사가 필요한 경우에는 사유와 지급 예정일을 먼저 알려야 합니다.</p>
+    <div class="chips" id="chips">
+     <button data-p="0" aria-pressed="false">약관 p.143</button>
+     <button data-p="1" aria-pressed="false">약관 p.142</button>
+     <button data-p="2" aria-pressed="false">지침 p.27</button>
+    </div>
+    <div class="src" id="src" aria-live="polite"></div>
+    <div class="hint">출처를 누르면 바로 아래에 원문이 보여요. 샘플 문구입니다.</div>
+   </div>
+  </div>
+  <form onsubmit="return false"><input aria-label="질문 입력" placeholder="문서에 대해 물어보세요"><button class="send">보내기</button></form>
+ </section>
+
+</div>
+<script>
+var P=[
+["제25조 지연이자","① 제24조의 기한을 넘겨 지급하는 경우 <mark>지급 기일 다음 날부터 지급일까지의 기간에 대하여 지연이자</mark>를 더하여 지급합니다.<br>② 지연이자의 이율은 별표에서 정한 바에 따릅니다.","샘플약관","v3 · 2026-03-01",143],
+["제24조 보험금의 지급","① 회사는 지급 청구 서류를 접수한 날부터 <mark>10일 이내에 보험금을 지급</mark>합니다.<br>② 조사가 필요한 경우 그 사유와 지급 예정일을 알려야 합니다.","샘플약관","v3 · 2026-03-01",142],
+["3. 지급 지연 시 안내","지급이 지연될 것으로 예상되면 <mark>지연 사유와 예상 지급일을 서면 또는 문자로 안내</mark>하고 처리 내역을 기록한다.","샘플 운영지침","v2 · 2025-09-15",27]];
+var src=document.getElementById("src"),cur=-1;
+function show(i,ver){var d=P[i];
+ if(i===cur&&!ver){cur=-1;src.classList.remove("on");mark(-1);return}
+ cur=i;
+ src.innerHTML='<div class="bar"><b>'+d[2]+'</b><span class="badge">'+(ver||d[3])+' · p.'+d[4]+'</span></div><div class="sheet"><h4>'+d[0]+'</h4><p>'+d[1]+'</p><div class="no">'+d[4]+' 페이지</div></div>';
+ src.classList.add("on");mark(i)}
+function mark(i){document.querySelectorAll("#chips button").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.p==i)})}
+document.querySelectorAll("#chips button").forEach(function(b){b.addEventListener("click",function(){show(+b.dataset.p)})});
+document.querySelectorAll(".doc").forEach(function(b){b.addEventListener("click",function(){
+ document.querySelectorAll(".doc").forEach(function(x){x.setAttribute("aria-current",x===b)});
+ show(+b.dataset.i,b.dataset.v||null);
+ src.scrollIntoView({block:"nearest",behavior:"smooth"})})});
+function theme(t){document.documentElement.setAttribute("data-theme",t);
+ document.getElementById("tl").setAttribute("aria-pressed",t==="light");
+ document.getElementById("td").setAttribute("aria-pressed",t==="dark");
+ try{localStorage.setItem("docchat-theme",t)}catch(e){}}
+document.getElementById("tl").addEventListener("click",function(){theme("light")});
+document.getElementById("td").addEventListener("click",function(){theme("dark")});
+var s=null;try{s=localStorage.getItem("docchat-theme")}catch(e){}
+theme(s||(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+show(0);
+</script>
+</body>
+</html>

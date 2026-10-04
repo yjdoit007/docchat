@@ -1,0 +1,24 @@
+# 비밀 정보 (API 키, 비밀번호) — 절대 올리지 않음
+.env
+*.env
+!.env.example
+
+# 데이터 (DB, 원본 PDF) — 백업 대상이지만 저장소에는 넣지 않음
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 파이썬 실행 환경·캐시
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# 로그·편집기·OS 파일
+*.log
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store

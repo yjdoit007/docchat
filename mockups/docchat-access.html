@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>문서 도우미 · 가입과 로그인</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F3F4F7;--panel:#fff;--ink:#151A26;--mute:#667088;--line:#DFE3EB;--sel:#E6EAF3;--amb:#B26A00;--btn:#151A26;--btnink:#fff;--ok:#1B7F4B;--okbg:#DCF3E6;--no:#B3261E;--nobg:#FBE3E1;--okbtn:#1B7F4B;--okbtnink:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0C111B;--panel:#141B2B;--ink:#E6EBF5;--mute:#98A5BF;--line:#26324B;--sel:#22304F;--amb:#F5B94A;--btn:#E6EBF5;--btnink:#101624;--ok:#5FD28F;--okbg:#12301F;--no:#FF8A80;--nobg:#3A1714;--okbtn:#5FD28F;--okbtnink:#07210F}}
+:root[data-theme="dark"]{--bg:#0C111B;--panel:#141B2B;--ink:#E6EBF5;--mute:#98A5BF;--line:#26324B;--sel:#22304F;--amb:#F5B94A;--btn:#E6EBF5;--btnink:#101624;--ok:#5FD28F;--okbg:#12301F;--no:#FF8A80;--nobg:#3A1714;--okbtn:#5FD28F;--okbtnink:#07210F}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans KR",system-ui,sans-serif;display:flex;flex-direction:column}
+button,input{font:inherit;color:inherit}
+button:focus-visible,input:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var(--amb);outline-offset:2px}
+.top{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.top>span{font-size:12px;color:var(--mute)}
+.top button{font-size:13px;background:none;border:1px solid var(--line);border-radius:8px;padding:4px 10px;color:var(--mute);cursor:pointer}
+.top button[aria-pressed="true"]{background:var(--sel);color:var(--ink);font-weight:700}
+.sp{margin-left:auto;display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.sp button{border:0!important;border-radius:0!important}
+.stage{flex:1;overflow-y:auto;display:flex;justify-content:center;padding:28px 16px}
+.scr{display:none;width:100%;max-width:400px;align-self:flex-start}
+.scr.wide{max-width:640px}
+.scr.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px 22px}
+h1{font-size:20px;margin:0 0 6px}
+.sub{color:var(--mute);margin:0 0 16px;font-size:14px}
+label{display:block;font-size:13px;font-weight:500;margin:14px 0 5px}
+input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+input[aria-invalid="true"]{border-color:var(--no)}
+.code{letter-spacing:.5em;text-align:center;font-size:20px}
+.err{color:var(--no);font-size:13px;margin-top:4px}
+.hint{color:var(--mute);font-size:12px;margin-top:4px}
+.pri{width:100%;margin-top:20px;font-weight:700;color:var(--btnink);background:var(--btn);border:0;border-radius:10px;padding:12px;cursor:pointer}
+.ghost{width:100%;margin-top:10px;background:none;border:1px solid var(--line);border-radius:10px;padding:10px;cursor:pointer;color:var(--mute)}
+.lnk{background:none;border:0;color:var(--mute);text-decoration:underline;cursor:pointer;padding:0;font-size:13px}
+.links{display:flex;justify-content:space-between;margin-top:14px}
+details{margin-top:14px;font-size:13px;color:var(--mute)}
+summary{cursor:pointer}
+.stat{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--amb);animation:p 1.6s ease-in-out infinite}
+@keyframes p{50%{opacity:.3}}
+@media(prefers-reduced-motion:reduce){.dot{animation:none}}
+.sum{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--bg);font-size:14px;margin-bottom:4px}
+.steps{display:flex;gap:6px;margin-bottom:16px;font-size:12px;color:var(--mute)}
+.steps span{flex:1;border-top:3px solid var(--line);padding-top:4px}
+.steps .d{border-color:var(--ok);color:var(--ink)}
+.seg{display:flex;gap:6px;margin:4px 0 14px}
+.seg button{font-size:13px;background:none;border:1px solid var(--line);border-radius:999px;padding:4px 12px;cursor:pointer;color:var(--mute)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.row{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.who{flex:1;min-width:0}
+.who b{display:block}
+.who small{color:var(--mute);font-size:12px;overflow-wrap:anywhere}
+.acts{display:flex;gap:6px}
+.acts button{font-size:13px;border-radius:8px;padding:5px 12px;cursor:pointer;border:1px solid var(--line);background:none}
+.acts .a{background:var(--okbtn);border-color:var(--okbtn);color:var(--okbtnink);font-weight:700}
+.tag{font-size:12px;border-radius:6px;padding:1px 8px;white-space:nowrap}
+.tag.ok{background:var(--okbg);color:var(--ok)}
+.tag.no{background:var(--nobg);color:var(--no)}
+.empty{color:var(--mute);text-align:center;padding:24px 0}
+</style>
+</head>
+<body>
+<div class="top">
+ <span>화면 미리보기</span>
+ <button data-s="login" aria-pressed="true">로그인</button>
+ <button data-s="reg" aria-pressed="false">가입</button>
+ <button data-s="ver" aria-pressed="false">이메일 인증</button>
+ <button data-s="wait" aria-pressed="false">승인 대기</button>
+ <button data-s="adm" aria-pressed="false">관리자 승인</button>
+ <button data-s="rs1" aria-pressed="false">비밀번호 찾기</button>
+ <div class="sp" role="group" aria-label="테마"><button id="tl" aria-pressed="true">백</button><button id="td" aria-pressed="false">흑</button></div>
+</div>
+
+<div class="stage">
+ <!-- 로그인 -->
+ <section class="scr on" id="login"><div class="card">
+  <h1>문서 도우미</h1><p class="sub">이메일과 비밀번호로 로그인하세요.</p>
+  <label for="le">이메일</label><input id="le" type="email" autocomplete="username" placeholder="name@example.com">
+  <label for="lp">비밀번호</label><input id="lp" type="password" autocomplete="current-password">
+  <div class="err" id="lerr"></div>
+  <button class="pri" id="lgo">로그인</button>
+  <div class="links"><button class="lnk" data-s="reg">처음이신가요? 가입하기</button><button class="lnk" data-s="rs1">비밀번호를 잊으셨나요?</button></div>
+ </div></section>
+
+ <!-- 가입 -->
+ <section class="scr" id="reg"><div class="card">
+  <div class="steps"><span class="d">1 정보 입력</span><span>2 이메일 인증</span><span>3 관리자 승인</span></div>
+  <h1>가입하기</h1><p class="sub">입력한 이메일로 인증 코드를 보내 드려요.</p>
+  <label for="rn">이름</label><input id="rn" autocomplete="name" placeholder="홍길동"><div class="err" id="e1"></div>
+  <label for="re">이메일</label><input id="re" type="email" autocomplete="email" placeholder="name@example.com"><div class="err" id="e2"></div>
+  <label for="rp">비밀번호</label><input id="rp" type="password" autocomplete="new-password"><div class="hint">8자 이상, 영문과 숫자를 함께 써 주세요.</div><div class="err" id="e3"></div>
+  <label for="rq">비밀번호 확인</label><input id="rq" type="password" autocomplete="new-password"><div class="err" id="e4"></div>
+  <button class="pri" id="rgo">인증 코드 받기</button>
+  <div class="links"><button class="lnk" data-s="login">이미 계정이 있어요</button></div>
+ </div></section>
+
+ <!-- 이메일 인증 -->
+ <section class="scr" id="ver"><div class="card">
+  <div class="steps"><span class="d">1 정보 입력</span><span class="d">2 이메일 인증</span><span>3 관리자 승인</span></div>
+  <h1>이메일을 확인해 주세요</h1><p class="sub"><b id="vm">name@example.com</b> 으로 6자리 코드를 보냈어요. 10분 안에 입력해 주세요.</p>
+  <label for="vc">인증 코드</label><input id="vc" class="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+  <div class="err" id="ve"></div><div class="hint">미리보기에서는 123456 을 입력하세요.</div>
+  <button class="pri" id="vgo">인증하고 승인 요청 보내기</button>
+  <button class="ghost" id="vre">코드 다시 받기</button>
+  <div class="hint" id="vn"></div>
+ </div></section>
+
+ <!-- 승인 대기 -->
+ <section class="scr" id="wait"><div class="card">
+  <div class="steps"><span class="d">1 정보 입력</span><span class="d">2 이메일 인증</span><span class="d">3 관리자 승인</span></div>
+  <div class="stat"><span class="dot" aria-hidden="true"></span><h1 style="margin:0">승인을 기다리고 있어요</h1></div>
+  <p class="sub">이메일 인증이 끝났고, 관리자에게 요청을 보냈어요. 승인되면 같은 이메일과 비밀번호로 로그인할 수 있어요.</p>
+  <div class="sum"><span id="wn">홍길동</span> · <span id="we">gildong@example.com</span></div>
+  <button class="pri" data-s="login">로그인 화면으로</button>
+ </div></section>
+
+ <!-- 관리자 -->
+ <section class="scr wide" id="adm"><div class="card">
+  <h1>가입 승인</h1><p class="sub">이메일 인증을 마친 요청만 여기에 나와요.</p>
+  <div class="seg" id="seg"><button data-f="p" aria-pressed="true">대기 <span id="cp"></span></button><button data-f="a" aria-pressed="false">승인됨</button><button data-f="r" aria-pressed="false">거절됨</button></div>
+  <div id="list"></div>
+  <h1 style="font-size:17px;margin-top:26px">서버 설정 <span class="tag ok" style="font-weight:400">관리자만 보여요</span></h1>
+  <p class="sub">팀원이 접속하는 주소예요. 도메인으로 바꾸면 여기서 수정하세요.</p>
+  <label for="sv">서버 주소</label><input id="sv" value="https://192.168.0.10" inputmode="url">
+  <div class="hint" id="svn">팀원에게는 이 주소를 알려 주세요.</div>
+  <button class="pri" id="svs" style="width:auto;padding:10px 20px">저장</button>
+ </div></section>
+
+ <!-- 비밀번호 찾기 1 -->
+ <section class="scr" id="rs1"><div class="card">
+  <h1>비밀번호 찾기</h1><p class="sub">가입한 이메일을 입력하면 재설정 코드를 보내 드려요.</p>
+  <label for="pe">이메일</label><input id="pe" type="email" autocomplete="username" placeholder="name@example.com"><div class="err" id="pee"></div>
+  <button class="pri" id="pgo">재설정 코드 받기</button>
+  <div class="links"><button class="lnk" data-s="login">로그인으로 돌아가기</button></div>
+ </div></section>
+
+ <!-- 비밀번호 찾기 2 -->
+ <section class="scr" id="rs2"><div class="card">
+  <h1>새 비밀번호 설정</h1><p class="sub">가입된 이메일이라면 코드를 보냈어요. 코드와 새 비밀번호를 입력하세요.</p>
+  <label for="pc">재설정 코드</label><input id="pc" class="code" inputmode="numeric" maxlength="6" placeholder="000000"><div class="hint">미리보기에서는 123456 을 입력하세요.</div><div class="err" id="pce"></div>
+  <label for="pn">새 비밀번호</label><input id="pn" type="password" autocomplete="new-password"><div class="hint">8자 이상, 영문과 숫자를 함께 써 주세요.</div><div class="err" id="pne"></div>
+  <label for="pq">새 비밀번호 확인</label><input id="pq" type="password" autocomplete="new-password"><div class="err" id="pqe"></div>
+  <button class="pri" id="pset">비밀번호 변경</button>
+ </div></section>
+
+ <!-- 변경 완료 -->
+ <section class="scr" id="rs3"><div class="card">
+  <h1>비밀번호를 바꿨어요</h1><p class="sub">다른 기기에서는 보안을 위해 다시 로그인해야 해요.</p>
+  <button class="pri" data-s="login">로그인하기</button>
+ </div></section>
+</div>
+
+<script>
+var U=[{n:"김민수",e:"minsu.kim@example.com",t:"오늘 09:12",s:"p"},{n:"이서연",e:"seoyeon.lee@example.com",t:"오늘 08:40",s:"p"},{n:"박지훈",e:"jihoon.park@example.com",t:"어제 17:55",s:"a"}],flt="p",pend=null;
+function $(i){return document.getElementById(i)}
+function go(id){document.querySelectorAll(".scr").forEach(function(s){s.classList.toggle("on",s.id===id)});
+ document.querySelectorAll(".top [data-s]").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.s===id)});
+ if(id==="adm")draw()}
+document.addEventListener("click",function(e){var b=e.target.closest("[data-s]");if(b)go(b.dataset.s)});
+function clr(ids){ids.forEach(function(p){var i=$(p[0]);i.removeAttribute("aria-invalid");$(p[1]).textContent=""})}
+function bad(i,e,m){$(i).setAttribute("aria-invalid","true");$(e).className="err";$(e).textContent=m}
+var MAIL=/^[^\s@]+@[^\s@]+\.[^\s@]+$/,PW=/^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
+function pwchk(a,b,ea,eb){var ok=true;
+ if(!PW.test($(a).value)){bad(a,ea,"8자 이상, 영문과 숫자를 함께 써 주세요.");ok=false}
+ if($(b).value!==$(a).value){bad(b,eb,"비밀번호가 서로 달라요. 다시 확인해 주세요.");ok=false}
+ return ok}
+$("lgo").addEventListener("click",function(){$("lerr").textContent="미리보기에서는 로그인이 연결되어 있지 않아요. 서버 연결 후 동작합니다."});
+$("rgo").addEventListener("click",function(){
+ clr([["rn","e1"],["re","e2"],["rp","e3"],["rq","e4"]]);var ok=true;
+ if(!$("rn").value.trim()){bad("rn","e1","이름을 입력해 주세요.");ok=false}
+ if(!MAIL.test($("re").value.trim())){bad("re","e2","이메일 형식을 확인해 주세요. 예: name@example.com");ok=false}
+ if(!pwchk("rp","rq","e3","e4"))ok=false;
+ if(!ok)return;
+ pend={n:$("rn").value.trim(),e:$("re").value.trim()};$("vm").textContent=pend.e;$("vc").value="";$("ve").textContent="";go("ver")});
+$("vgo").addEventListener("click",function(){
+ if($("vc").value.trim()!=="123456"){bad("vc","ve","코드가 맞지 않아요. 메일의 6자리 숫자를 다시 확인해 주세요.");return}
+ $("vc").removeAttribute("aria-invalid");$("ve").textContent="";
+ var p=pend||{n:"홍길동",e:"gildong@example.com"};$("wn").textContent=p.n;$("we").textContent=p.e;
+ U.unshift({n:p.n,e:p.e,t:"방금",s:"p"});go("wait")});
+$("vre").addEventListener("click",function(){$("vn").textContent="코드를 다시 보냈어요. 이전 코드는 사용할 수 없어요."});
+$("pgo").addEventListener("click",function(){
+ clr([["pe","pee"]]);
+ if(!MAIL.test($("pe").value.trim())){bad("pe","pee","이메일 형식을 확인해 주세요. 예: name@example.com");return}
+ go("rs2")});
+$("pset").addEventListener("click",function(){
+ clr([["pc","pce"],["pn","pne"],["pq","pqe"]]);var ok=true;
+ if($("pc").value.trim()!=="123456"){bad("pc","pce","코드가 맞지 않아요. 메일의 6자리 숫자를 다시 확인해 주세요.");ok=false}
+ if(!pwchk("pn","pq","pne","pqe"))ok=false;
+ if(ok)go("rs3")});
+document.querySelectorAll("#seg button").forEach(function(b){b.addEventListener("click",function(){flt=b.dataset.f;
+ document.querySelectorAll("#seg button").forEach(function(x){x.setAttribute("aria-pressed",x===b)});draw()})});
+function esc(s){return s.replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function draw(){var L=U.filter(function(u){return u.s===flt});
+ $("cp").textContent=U.filter(function(u){return u.s==="p"}).length;
+ $("list").innerHTML=L.length?L.map(function(u){var i=U.indexOf(u);
+  return '<div class="row"><div class="who"><b>'+esc(u.n)+'</b><small>'+esc(u.e)+' · '+u.t+' · 이메일 인증 완료</small></div>'+
+  (u.s==="p"?'<div class="acts"><button class="a" data-i="'+i+'" data-v="a">승인</button><button data-i="'+i+'" data-v="r">거절</button></div>'
+  :'<span class="tag '+(u.s==="a"?'ok">승인됨':'no">거절됨')+'</span>')+'</div>'}).join(""):'<div class="empty">'+(flt==="p"?"대기 중인 요청이 없어요.":"해당하는 사람이 없어요.")+'</div>';
+ document.querySelectorAll(".acts button").forEach(function(b){b.addEventListener("click",function(){U[+b.dataset.i].s=b.dataset.v;draw()})})}
+function theme(t){document.documentElement.setAttribute("data-theme",t);$("tl").setAttribute("aria-pressed",t==="light");$("td").setAttribute("aria-pressed",t==="dark");try{localStorage.setItem("docchat-theme",t)}catch(e){}}
+$("tl").addEventListener("click",function(){theme("light")});$("td").addEventListener("click",function(){theme("dark")});
+var s=null;try{s=localStorage.getItem("docchat-theme")}catch(e){}
+theme(s||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
+$("svs").addEventListener("click",function(){var v=$("sv").value.trim();
+ if(!/^https?:\/\/\S+$/.test(v)){bad("sv","svn","https:// 로 시작하는 주소를 입력해 주세요.");return}
+ $("sv").removeAttribute("aria-invalid");$("svn").className="hint";$("svn").textContent="저장했어요. 팀원에게 새 주소를 알려 주세요."});
+draw();
+</script>
+</body>
+</html>

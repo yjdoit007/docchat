@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>문서 챗봇 시안 A+B</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F4F6FA;--panel:#fff;--ink:#14213D;--mute:#5B6780;--line:#DDE2EC;--acc:#1F4FD8;--accbg:#E7EDFC;--me:#1F4FD8;--mark:#FFE27A;--paper:#FFFDF8;--paperink:#2B2B2B;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E1424;--panel:#161E33;--ink:#E8ECF6;--mute:#9AA6C0;--line:#27324D;--acc:#6B8CFF;--accbg:#1D2A52;--me:#3A5BD9;--mark:#7A6A1E;--paper:#1B1F2B;--paperink:#E4E1D8}}
+:root[data-theme="dark"]{--bg:#0E1424;--panel:#161E33;--ink:#E8ECF6;--mute:#9AA6C0;--line:#27324D;--acc:#6B8CFF;--accbg:#1D2A52;--me:#3A5BD9;--mark:#7A6A1E;--paper:#1B1F2B;--paperink:#E4E1D8}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans KR",system-ui,sans-serif}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr);max-width:1180px;margin:0 auto}
+@media(min-width:900px){.app{grid-template-columns:minmax(380px,5fr) minmax(0,6fr);gap:0}}
+.chat{display:flex;flex-direction:column;min-height:0;background:var(--panel);border-inline:1px solid var(--line)}
+header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+header b{font-size:16px}
+header select{margin-left:auto;font:inherit;font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px 8px;max-width:50%}
+.msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.m{max-width:88%;padding:10px 14px;border-radius:16px}
+.me{align-self:flex-end;background:var(--me);color:#fff;border-bottom-right-radius:4px}
+.bot{align-self:flex-start;background:var(--bg);border-bottom-left-radius:4px}
+.bot p{margin:0 0 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.chip{font:inherit;font-size:13px;color:var(--acc);background:var(--accbg);border:1px solid transparent;border-radius:999px;padding:4px 11px;cursor:pointer;text-align:left}
+.chip[aria-pressed="true"]{border-color:var(--acc);font-weight:700}
+.chip:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.hint{font-size:12px;color:var(--mute);margin-top:8px}
+form{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+input{flex:1;min-width:0;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:10px 16px}
+.send{font:inherit;font-weight:700;color:#fff;background:var(--acc);border:0;border-radius:999px;padding:0 18px;cursor:pointer}
+/* viewer */
+.viewer{display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+.vbar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);font-size:13px}
+.vbar strong{font-size:14px}
+.badge{background:var(--accbg);color:var(--acc);border-radius:6px;padding:1px 8px;font-size:12px;font-weight:500}
+.vbar .x{margin-left:auto;display:none;font:inherit;background:none;border:0;color:var(--mute);font-size:20px;cursor:pointer}
+.page{flex:1;overflow-y:auto;padding:20px}
+.sheet{max-width:560px;margin:0 auto;background:var(--paper);color:var(--paperink);border:1px solid var(--line);padding:28px 30px;font:16px/1.85 "Noto Serif KR",serif;box-shadow:0 1px 0 var(--line)}
+.sheet h4{margin:0 0 10px;font-size:15px;font-weight:600}
+.sheet p{margin:0 0 12px}
+mark{background:var(--mark);color:inherit;padding:1px 0}
+.pgno{margin-top:18px;text-align:center;font:12px "Noto Sans KR",sans-serif;color:var(--mute)}
+.empty{max-width:320px;margin:60px auto;text-align:center;color:var(--mute)}
+@media(max-width:899px){
+.viewer{position:fixed;inset:12% 0 0 0;border-radius:18px 18px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.25);transform:translateY(105%);transition:transform .25s ease;z-index:5;padding-bottom:env(safe-area-inset-bottom,0px)}
+.viewer.open{transform:none}
+.vbar .x{display:block}
+.empty{display:none}
+}
+@media(prefers-reduced-motion:reduce){.viewer{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="chat" aria-label="대화">
+    <header><b>문서 도우미</b>
+      <select aria-label="기준 버전"><option>최신 버전 기준</option><option>2026-03-01 버전 기준</option><option>2025-09-15 버전 기준</option></select>
+    </header>
+    <div class="msgs" id="msgs">
+      <div class="m bot"><p>등록된 문서에서 근거를 찾아 답해 드려요. 답변마다 출처 페이지를 함께 보여 드립니다.</p></div>
+      <div class="m me">보험금 지급이 늦어지면 지연이자를 줘야 하나요?</div>
+      <div class="m bot">
+        <p>네, 지급 기한을 넘기면 지연이자를 지급하도록 되어 있어요. 기한은 지급 청구 서류를 접수한 날부터 정해지고, 사유가 있어 조사가 필요한 경우에는 별도 기한을 안내해야 합니다.</p>
+        <div class="chips">
+          <button class="chip" data-k="a" aria-pressed="false">샘플약관 v3 · p.142</button>
+          <button class="chip" data-k="b" aria-pressed="false">샘플약관 v3 · p.143</button>
+          <button class="chip" data-k="c" aria-pressed="false">운영지침 v2 · p.27</button>
+        </div>
+        <div class="hint">출처를 누르면 원문이 열려요. 아래 내용은 화면 확인용 샘플 문구입니다.</div>
+      </div>
+    </div>
+    <form onsubmit="return false"><input aria-label="질문 입력" placeholder="문서에 대해 물어보세요"><button class="send">보내기</button></form>
+  </section>
+
+  <aside class="viewer" id="viewer" aria-label="원문 보기">
+    <div class="vbar"><strong id="vt">원문</strong><span class="badge" id="vv"></span><button class="x" id="close" aria-label="닫기">×</button></div>
+    <div class="page" id="page"><div class="empty">답변 아래 출처를 누르면<br>해당 페이지와 근거 문장이 여기에 표시돼요.</div></div>
+  </aside>
+</div>
+<script>
+var S={
+a:{t:"샘플약관",v:"v3 · 2026-03-01",p:142,h:"제24조 보험금의 지급",b:["① 회사는 지급 청구 서류를 접수한 날부터 <mark>10일 이내에 보험금을 지급</mark>합니다.","② 지급 사유의 조사나 확인이 필요한 경우에는 접수 후 <u>그 사유와 지급 예정일</u>을 청구인에게 알려야 합니다."]},
+b:{t:"샘플약관",v:"v3 · 2026-03-01",p:143,h:"제25조 지연이자",b:["① 제24조의 기한을 넘겨 지급하는 경우 <mark>지급 기일 다음 날부터 지급일까지의 기간에 대하여 지연이자</mark>를 더하여 지급합니다.","② 지연이자의 이율은 별표에서 정한 바에 따릅니다."]},
+c:{t:"샘플 운영지침",v:"v2 · 2025-09-15",p:27,h:"3. 지급 지연 시 안내",b:["지급이 지연될 것으로 예상되면 <mark>지연 사유와 예상 지급일을 서면 또는 문자로 안내</mark>하고 처리 내역을 기록한다."]}
+};
+var v=document.getElementById("viewer"),pg=document.getElementById("page");
+document.querySelectorAll(".chip").forEach(function(c){c.addEventListener("click",function(){
+  var d=S[c.dataset.k];
+  document.querySelectorAll(".chip").forEach(function(x){x.setAttribute("aria-pressed",x===c)});
+  document.getElementById("vt").textContent=d.t;
+  document.getElementById("vv").textContent=d.v;
+  pg.innerHTML='<div class="sheet"><h4>'+d.h+'</h4>'+d.b.map(function(x){return"<p>"+x+"</p>"}).join("")+'<div class="pgno">'+d.p+' 페이지</div></div>';
+  pg.scrollTop=0;v.classList.add("open");
+})});
+document.getElementById("close").addEventListener("click",function(){v.classList.remove("open")});
+</script>
+</body>
+</html>

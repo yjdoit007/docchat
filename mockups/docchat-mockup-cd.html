@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>문서 챗봇 시안 C·D</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--pbg:#EEF1F0;--pink:#14211F;--pmute:#5E6F6B;--pline:#D5DDDA;--card:#fff;--g:#0F766E;--gbg:#DDF1EE;--mark:#FFE27A;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--pbg:#0D1514;--pink:#E3EEEB;--pmute:#93A8A3;--pline:#243431;--card:#142120;--g:#4FD1C5;--gbg:#14332F;--mark:#7A6A1E}}
+:root[data-theme="dark"]{--pbg:#0D1514;--pink:#E3EEEB;--pmute:#93A8A3;--pline:#243431;--card:#142120;--g:#4FD1C5;--gbg:#14332F;--mark:#7A6A1E}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--pbg);color:var(--pink);font:15px/1.6 "Noto Sans KR",system-ui,sans-serif;display:flex;flex-direction:column}
+.tabs{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--pline)}
+.tabs button{font:inherit;font-size:14px;color:var(--pmute);background:none;border:1px solid var(--pline);border-radius:8px;padding:6px 14px;cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--pink);border-color:var(--g);background:var(--gbg);font-weight:700}
+button:focus-visible,input:focus-visible{outline:2px solid var(--g);outline-offset:2px}
+.view{flex:1;min-height:0;display:none}
+.view.on{display:block}
+mark{background:var(--mark);color:inherit}
+/* ---- C: 검색형 ---- */
+#C{overflow-y:auto;padding:28px 16px 40px}
+.cwrap{max-width:720px;margin:0 auto}
+.cwrap h1{font-size:22px;margin:8px 0 16px;font-weight:700}
+.sbox{display:flex;gap:8px;background:var(--card);border:1px solid var(--pline);border-radius:14px;padding:6px 6px 6px 16px}
+.sbox input{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--pink);background:none;border:0}
+.sbox button{font:inherit;font-weight:700;color:#fff;background:var(--g);border:0;border-radius:10px;padding:8px 18px;cursor:pointer}
+@media (prefers-color-scheme:dark){.sbox button{color:#06201D}}
+.ans{margin-top:22px;background:var(--card);border:1px solid var(--pline);border-left:4px solid var(--g);border-radius:10px;padding:16px 18px}
+.ans h2{font-size:14px;color:var(--pmute);margin:0 0 6px;font-weight:500}
+.ans p{margin:0}
+.src{margin-top:16px;display:grid;gap:10px}
+.sc{text-align:left;font:inherit;color:inherit;background:var(--card);border:1px solid var(--pline);border-radius:10px;padding:12px 14px;cursor:pointer;width:100%}
+.sc:hover{border-color:var(--g)}
+.sc b{font-size:13px;color:var(--g)}
+.sc q{display:block;margin-top:4px;font:15px/1.7 "Noto Serif KR",serif;quotes:none}
+.sc .more{display:none;margin-top:8px;padding-top:8px;border-top:1px dashed var(--pline);font:13px "Noto Sans KR";color:var(--pmute)}
+.sc[aria-expanded="true"]{border-color:var(--g)}
+.sc[aria-expanded="true"] .more{display:block}
+.follow{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px}
+.follow span{font-size:13px;border:1px solid var(--pline);border-radius:999px;padding:4px 12px;color:var(--pmute)}
+/* ---- D: 3단 작업공간 ---- */
+#D{--dbg:#101827;--dpanel:#172033;--dline:#2A3650;--dink:#E6EBF5;--dmute:#98A5BF;--amb:#F5B94A;background:var(--dbg);color:var(--dink)}
+.dgrid{height:100%;display:grid;grid-template-columns:minmax(0,1fr)}
+@media(min-width:1000px){.dgrid{grid-template-columns:230px minmax(0,1fr) minmax(0,1fr)}}
+.docs{display:none;background:var(--dpanel);border-right:1px solid var(--dline);padding:14px 10px;overflow-y:auto}
+@media(min-width:1000px){.docs{display:block}}
+.docs h3{font-size:13px;color:var(--dmute);margin:0 6px 8px;font-weight:500}
+.doc{padding:8px 10px;border-radius:8px;font-size:14px}
+.doc.cur{background:#22304F}
+.doc small{display:block;color:var(--dmute);font-size:12px}
+.dchat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--dline)}
+.dmsgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:16px}
+.q{align-self:flex-end;border:1px solid var(--dline);border-radius:10px;padding:8px 12px;max-width:90%}
+.a p{margin:0 0 8px}
+.dchips{display:flex;flex-wrap:wrap;gap:6px}
+.dchips button{font:inherit;font-size:13px;color:var(--amb);background:none;border:1px solid var(--amb);border-radius:6px;padding:2px 10px;cursor:pointer}
+.dchips button[aria-pressed="true"]{background:var(--amb);color:#1A1405;font-weight:700}
+.dchat form{padding:10px 12px;border-top:1px solid var(--dline)}
+.dchat input{width:100%;font:inherit;color:var(--dink);background:var(--dpanel);border:1px solid var(--dline);border-radius:10px;padding:10px 14px}
+.dview{display:none;flex-direction:column;min-height:0;background:var(--dpanel)}
+.dview.on{display:flex}
+@media(min-width:1000px){.dview{display:flex}}
+.dview .bar{padding:12px 16px;border-bottom:1px solid var(--dline);font-size:13px;color:var(--dmute)}
+.dview .bar b{color:var(--dink)}
+.dpage{flex:1;overflow-y:auto;padding:20px;font:16px/1.85 "Noto Serif KR",serif}
+.dpage h4{margin:0 0 10px;font-size:15px}
+.dpage mark{background:#6B5412;color:#FFF3CF}
+</style>
+</head>
+<body>
+<nav class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-v="C">시안 C · 검색형</button>
+  <button role="tab" aria-selected="false" data-v="D">시안 D · 3단 작업공간</button>
+</nav>
+
+<main class="view on" id="C">
+ <div class="cwrap">
+  <h1>어떤 내용을 찾고 계세요?</h1>
+  <div class="sbox"><input aria-label="질문" value="보험금 지급이 늦어지면 지연이자를 줘야 하나요?"><button>찾기</button></div>
+  <div class="ans"><h2>요약 답변</h2><p>지급 기한을 넘기면 지연이자를 함께 지급하도록 되어 있습니다. 기한은 청구 서류를 접수한 날부터 계산하고, 조사가 필요하면 사유와 지급 예정일을 먼저 안내해야 합니다.</p></div>
+  <div class="src">
+   <button class="sc" aria-expanded="false"><b>샘플약관 v3 · p.143</b><q>기한을 넘겨 지급하는 경우 <mark>지급 기일 다음 날부터 지급일까지의 기간에 대하여 지연이자</mark>를 더하여 지급합니다.</q><div class="more">제25조 지연이자 · 2026-03-01 버전 · 같은 조항이 v2(2025-09-15)에도 있어요.</div></button>
+   <button class="sc" aria-expanded="false"><b>샘플약관 v3 · p.142</b><q>접수한 날부터 <mark>10일 이내에 보험금을 지급</mark>합니다.</q><div class="more">제24조 보험금의 지급 · 2026-03-01 버전</div></button>
+   <button class="sc" aria-expanded="false"><b>샘플 운영지침 v2 · p.27</b><q><mark>지연 사유와 예상 지급일을 서면 또는 문자로 안내</mark>하고 처리 내역을 기록한다.</q><div class="more">3. 지급 지연 시 안내 · 2025-09-15 버전</div></button>
+  </div>
+  <div class="follow"><span>이전 버전과 달라진 점은?</span><span>이율은 어디에 나와 있나요?</span><span>예외 사유 보기</span></div>
+  <p style="font-size:12px;color:var(--pmute);margin-top:18px">화면 확인용 샘플 문구입니다.</p>
+ </div>
+</main>
+
+<main class="view" id="D">
+ <div class="dgrid">
+  <aside class="docs"><h3>문서 2건</h3>
+   <div class="doc cur">샘플약관<small>v3 · 2026-03-01 · 312쪽</small></div>
+   <div class="doc">샘플 운영지침<small>v2 · 2025-09-15 · 84쪽</small></div>
+   <h3 style="margin-top:18px">이전 버전</h3>
+   <div class="doc">샘플약관 v2<small>2025-09-15</small></div>
+   <div class="doc">샘플약관 v1<small>2025-01-10</small></div>
+  </aside>
+  <section class="dchat">
+   <div class="dmsgs">
+    <div class="q">보험금 지급이 늦어지면 지연이자를 줘야 하나요?</div>
+    <div class="a"><p>네. 기한을 넘기면 지연이자를 더해 지급해야 하고, 조사가 필요한 경우에는 사유와 지급 예정일을 먼저 알려야 합니다.</p>
+     <div class="dchips"><button aria-pressed="true" data-p="0">약관 p.143</button><button aria-pressed="false" data-p="1">약관 p.142</button><button aria-pressed="false" data-p="2">지침 p.27</button></div></div>
+   </div>
+   <form onsubmit="return false"><input aria-label="질문 입력" placeholder="질문을 입력하세요"></form>
+  </section>
+  <section class="dview on" id="dv">
+   <div class="bar"><b id="dt">샘플약관</b> · <span id="dm">v3 · p.143</span></div>
+   <div class="dpage" id="dp"></div>
+  </section>
+ </div>
+</main>
+
+<script>
+var P=[
+["제25조 지연이자","① 제24조의 기한을 넘겨 지급하는 경우 <mark>지급 기일 다음 날부터 지급일까지의 기간에 대하여 지연이자</mark>를 더하여 지급합니다.<br>② 지연이자의 이율은 별표에서 정한 바에 따릅니다.","샘플약관","v3 · p.143"],
+["제24조 보험금의 지급","① 회사는 지급 청구 서류를 접수한 날부터 <mark>10일 이내에 보험금을 지급</mark>합니다.<br>② 조사가 필요한 경우 그 사유와 지급 예정일을 알려야 합니다.","샘플약관","v3 · p.142"],
+["3. 지급 지연 시 안내","지급이 지연될 것으로 예상되면 <mark>지연 사유와 예상 지급일을 서면 또는 문자로 안내</mark>하고 처리 내역을 기록한다.","샘플 운영지침","v2 · p.27"]];
+function show(i){var d=P[i];document.getElementById("dt").textContent=d[2];document.getElementById("dm").textContent=d[3];
+ document.getElementById("dp").innerHTML="<h4>"+d[0]+"</h4><p>"+d[1]+"</p>";
+ document.querySelectorAll(".dchips button").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.p==i)})}
+document.querySelectorAll(".dchips button").forEach(function(b){b.addEventListener("click",function(){show(+b.dataset.p)})});
+show(0);
+document.querySelectorAll(".sc").forEach(function(c){c.addEventListener("click",function(){c.setAttribute("aria-expanded",c.getAttribute("aria-expanded")!=="true")})});
+document.querySelectorAll(".tabs button").forEach(function(t){t.addEventListener("click",function(){
+ document.querySelectorAll(".tabs button").forEach(function(x){x.setAttribute("aria-selected",x===t)});
+ document.querySelectorAll(".view").forEach(function(v){v.classList.toggle("on",v.id===t.dataset.v)})})});
+</script>
+</body>
+</html>
