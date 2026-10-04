@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>문서 도우미</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- ===== 접속 화면 (로그인·가입·인증·대기·비밀번호 찾기) ===== -->
+<div id="access" class="access" hidden>
+ <div class="top">
+  <b>문서 도우미</b>
+  <div class="theme" role="group" aria-label="화면 테마"><button data-theme="light" aria-pressed="true">백</button><button data-theme="dark" aria-pressed="false">흑</button></div>
+ </div>
+ <div class="stage">
+  <section class="scr" id="login"><form class="card" novalidate>
+   <h1>문서 도우미</h1><p class="sub">이메일과 비밀번호로 로그인하세요.</p>
+   <label for="le">이메일</label><input id="le" type="email" autocomplete="username" placeholder="name@example.com">
+   <label for="lp">비밀번호</label><input id="lp" type="password" autocomplete="current-password">
+   <div class="err" id="lerr" role="alert"></div>
+   <button class="pri" type="submit">로그인</button>
+   <div class="links"><button type="button" class="lnk" data-go="reg">처음이신가요? 가입하기</button><button type="button" class="lnk" data-go="rs1">비밀번호를 잊으셨나요?</button></div>
+  </form></section>
+
+  <section class="scr" id="reg"><form class="card" novalidate>
+   <div class="steps"><span class="d">1 정보 입력</span><span>2 이메일 인증</span><span>3 관리자 승인</span></div>
+   <h1>가입하기</h1><p class="sub">입력한 이메일로 인증 코드를 보내 드려요.</p>
+   <label for="rn">이름</label><input id="rn" autocomplete="name" placeholder="홍길동"><div class="err" id="rn-e"></div>
+   <label for="re">이메일</label><input id="re" type="email" autocomplete="email" placeholder="name@example.com"><div class="err" id="re-e"></div>
+   <label for="rp">비밀번호</label><input id="rp" type="password" autocomplete="new-password"><div class="hint">8자 이상, 영문과 숫자를 함께 써 주세요.</div><div class="err" id="rp-e"></div>
+   <label for="rq">비밀번호 확인</label><input id="rq" type="password" autocomplete="new-password"><div class="err" id="rq-e"></div>
+   <div class="err" id="rerr" role="alert"></div>
+   <button class="pri" type="submit">인증 코드 받기</button>
+   <div class="links"><button type="button" class="lnk" data-go="login">이미 계정이 있어요</button></div>
+  </form></section>
+
+  <section class="scr" id="ver"><form class="card" novalidate>
+   <div class="steps"><span class="d">1 정보 입력</span><span class="d">2 이메일 인증</span><span>3 관리자 승인</span></div>
+   <h1>이메일을 확인해 주세요</h1><p class="sub"><b id="vm"></b> 으로 6자리 코드를 보냈어요. 10분 안에 입력해 주세요.</p>
+   <label for="vc">인증 코드</label><input id="vc" class="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+   <div class="err" id="vc-e" role="alert"></div>
+   <button class="pri" type="submit">인증하고 승인 요청 보내기</button>
+   <button class="ghost" type="button" id="vre">코드 다시 받기</button>
+   <div class="hint" id="vn" aria-live="polite"></div>
+  </form></section>
+
+  <section class="scr" id="wait"><div class="card">
+   <div class="steps"><span class="d">1 정보 입력</span><span class="d">2 이메일 인증</span><span class="d">3 관리자 승인</span></div>
+   <div class="stat"><span class="dot" aria-hidden="true"></span><h1>승인을 기다리고 있어요</h1></div>
+   <p class="sub">이메일 인증이 끝났고, 관리자에게 요청을 보냈어요. 승인되면 같은 이메일과 비밀번호로 로그인할 수 있어요.</p>
+   <div class="sum" id="wsum"></div>
+   <button class="pri" type="button" data-go="login">로그인 화면으로</button>
+  </div></section>
+
+  <section class="scr" id="rs1"><form class="card" novalidate>
+   <h1>비밀번호 찾기</h1><p class="sub">가입한 이메일을 입력하면 재설정 코드를 보내 드려요.</p>
+   <label for="pe">이메일</label><input id="pe" type="email" autocomplete="username" placeholder="name@example.com"><div class="err" id="pe-e" role="alert"></div>
+   <button class="pri" type="submit">재설정 코드 받기</button>
+   <div class="links"><button type="button" class="lnk" data-go="login">로그인으로 돌아가기</button></div>
+  </form></section>
+
+  <section class="scr" id="rs2"><form class="card" novalidate>
+   <h1>새 비밀번호 설정</h1><p class="sub">가입된 이메일이라면 코드를 보냈어요. 코드와 새 비밀번호를 입력하세요.</p>
+   <label for="pc">재설정 코드</label><input id="pc" class="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"><div class="err" id="pc-e"></div>
+   <label for="pn">새 비밀번호</label><input id="pn" type="password" autocomplete="new-password"><div class="hint">8자 이상, 영문과 숫자를 함께 써 주세요.</div><div class="err" id="pn-e"></div>
+   <label for="pq">새 비밀번호 확인</label><input id="pq" type="password" autocomplete="new-password"><div class="err" id="pq-e"></div>
+   <div class="err" id="perr" role="alert"></div>
+   <button class="pri" type="submit">비밀번호 변경</button>
+  </form></section>
+
+  <section class="scr" id="rs3"><div class="card">
+   <h1>비밀번호를 바꿨어요</h1><p class="sub">다른 기기에서는 보안을 위해 다시 로그인해야 해요.</p>
+   <button class="pri" type="button" data-go="login">로그인하기</button>
+  </div></section>
+ </div>
+</div>
+
+<!-- ===== 대화 화면 ===== -->
+<div id="main" class="app" hidden>
+ <aside class="side" aria-label="문서 목록">
+  <h3>문서</h3>
+  <div id="docs"><div class="side-empty">불러오는 중…</div></div>
+  <h3>이전 버전</h3>
+  <div id="olds"><div class="side-empty">없음</div></div>
+ </aside>
+
+ <section class="chat" aria-label="대화">
+  <header>
+   <b>문서 도우미</b>
+   <select id="asof" aria-label="기준 버전"><option value="">최신 버전 기준</option></select>
+   <div class="theme" role="group" aria-label="화면 테마"><button data-theme="light" aria-pressed="true">백</button><button data-theme="dark" aria-pressed="false">흑</button></div>
+   <button class="menu" id="who" type="button" aria-haspopup="true" aria-expanded="false"></button>
+   <div class="pop" id="whopop" hidden>
+    <div class="pop-who" id="whoinfo"></div>
+    <button type="button" id="logout">로그아웃</button>
+   </div>
+  </header>
+  <div class="msgs" id="msgs" aria-live="polite">
+   <div class="m bot"><p>등록된 문서에서 근거를 찾아 답해 드려요. 답변마다 출처 조문과 원문 인용을 함께 보여 드려요.</p>
+    <p class="mute">예: “풍수해보험의 보험목적물은 뭐예요?”, “정부가 보험료를 얼마나 지원하나요?”</p></div>
+  </div>
+  <form id="ask" class="ask">
+   <input id="q" aria-label="질문 입력" placeholder="문서에 대해 물어보세요" autocomplete="off" maxlength="1000">
+   <button class="send" type="submit">보내기</button>
+  </form>
+ </section>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

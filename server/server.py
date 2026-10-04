@@ -439,6 +439,20 @@ def get_page(vid: int, n: int, u=Depends(current_user)):
     return dict(r)
 
 
+@app.get("/api/versions/{vid}/article")
+def get_article(vid: int, label: str, u=Depends(current_user)):
+    """출처 펼쳐 보기용 조문 원문. PDF 줄바꿈으로 끊긴 낱말만 잇고 나머지(개정 표시 포함)는 원문 그대로."""
+    with db() as c:
+        r = c.execute("SELECT ch.label, ch.page_from, ch.page_to, ch.text, v.version, v.uploaded_at, d.title "
+                      "FROM chunks ch JOIN versions v ON v.id=ch.version_id JOIN documents d ON d.id=v.doc_id "
+                      "WHERE ch.version_id=? AND ch.label=?", (vid, label)).fetchone()
+    if not r:
+        raise err(404, "해당 조문을 찾을 수 없어요.")
+    out = dict(r)
+    out["text"] = re.sub(r"(?<=[가-힣])[ \t]*\n[ \t]*(?=[가-힣])", "", r["text"])
+    return out
+
+
 @app.get("/api/versions/{vid}/file")
 def get_file(vid: int, u=Depends(current_user)):
     with db() as c:
