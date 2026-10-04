@@ -104,6 +104,7 @@
    <div class="m bot"><p>등록된 문서에서 근거를 찾아 답해 드려요. 답변마다 출처 조문과 원문 인용을 함께 보여 드려요.</p>
     <p class="mute">예: “풍수해보험의 보험목적물은 뭐예요?”, “정부가 보험료를 얼마나 지원하나요?”</p></div>
   </div>
+  <div class="modes" id="modes" role="radiogroup" aria-label="답변 모드" hidden></div>
   <form id="ask" class="ask">
    <input id="q" aria-label="질문 입력" placeholder="문서에 대해 물어보세요" autocomplete="off" maxlength="1000">
    <button class="send" type="submit">보내기</button>
@@ -175,15 +176,24 @@
     </div>
    </div>
    <!-- 서버 설정 -->
-   <form class="tab" id="t-set" role="tabpanel" novalidate>
-    <div class="card">
+   <div class="tab" id="t-set" role="tabpanel">
+    <form class="card" id="llmform" novalidate>
+     <h2>답변 모델</h2>
+     <p class="sub">팀원이 질문할 때 고를 수 있는 답변 모드와 기본값이에요. 허용한 모드가 둘 이상이면 입력창 위에 선택 버튼이 나와요.
+      외부 모델(Gemini·Claude)은 <b>질문과 근거 조문이 그 회사로 전송</b>돼요. Gemini 무료 등급은 보낸 내용이 Google 서비스 개선에 쓰일 수 있어요.
+      외부 모델이 한도·오류로 실패하면 자동으로 로컬 모델로 답해요.</p>
+     <div id="llmlist"></div>
+     <div class="err" id="llm-e" role="alert"></div><div class="note" id="llmmsg" role="status"></div>
+     <button class="pri narrow" type="submit">저장</button>
+    </form>
+    <form class="card" id="setform" novalidate>
      <h2>서버 설정 <span class="tag ok">관리자만 보여요</span></h2>
      <p class="sub">팀원이 접속하는 주소예요. 도메인으로 바꾸면 여기서 수정하세요.</p>
      <label for="pubu">서버 주소</label><input id="pubu" inputmode="url" placeholder="https://docchat.example.com">
      <div class="err" id="pubu-e"></div><div class="hint" id="pubinfo"></div>
      <button class="pri narrow" type="submit">저장</button>
-    </div>
-   </form>
+    </form>
+   </div>
   </div>
  </section>
 </div>

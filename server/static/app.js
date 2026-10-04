@@ -181,6 +181,7 @@
     $("toadmin").hidden = user.role !== "admin";
     showChat();
     loadDocs();
+    loadModes();
     if (user.role === "admin") refreshPending();
   }
 
@@ -242,18 +243,94 @@
     msgs.appendChild(d); msgs.scrollTop = msgs.scrollHeight;
     return d;
   }
+  // ---------- 답변 모드 (⚡ 빠름 Gemini / 🔒 내부 로컬) ----------
+  var MODES = [], mode = null;
+  function loadModes() {
+    api("GET", "/api/modes").then(function (r) {
+      MODES = r.modes || [];
+      var saved = store.get("docchat-mode");
+      mode = MODES.some(function (m) { return m.id === saved; }) ? saved : r.default;
+      var box = $("modes");
+      box.hidden = MODES.length < 2;  // 고를 게 하나뿐이면 숨긴다
+      box.innerHTML = MODES.map(function (m) {
+        return '<button type="button" role="radio" data-mode="' + esc(m.id) + '" aria-checked="' + (m.id === mode) + '" title="' + esc(m.note) + '">' + esc(m.label) + "</button>";
+      }).join("") + '<span class="mode-note" id="modenote"></span>';
+      modeNote();
+    }, function () {});
+  }
+  function modeNote() {
+    var m = MODES.filter(function (x) { return x.id === mode; })[0];
+    if ($("modenote")) $("modenote").textContent = m ? m.note : "";
+  }
+  $("modes").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-mode]");
+    if (!b) return;
+    mode = b.dataset.mode; store.set("docchat-mode", mode);
+    this.querySelectorAll("[data-mode]").forEach(function (x) { x.setAttribute("aria-checked", x === b); });
+    modeNote();
+  });
+
+  // 답을 쓰는 대로 받기 (Server-Sent Events: delta · reset · done · error)
+  function askStream(body, on) {
+    return fetch("/api/ask/stream", {
+      method: "POST", body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token }
+    }).then(function (r) {
+      if (!r.ok) {
+        return r.json().catch(function () { return {}; }).then(function (d) {
+          if (r.status === 401) logout("로그인이 만료됐어요. 다시 로그인해 주세요.");
+          throw new Error(d.detail || "질문을 보내지 못했어요.");
+        });
+      }
+      var reader = r.body.getReader(), dec = new TextDecoder(), buf = "";
+      function pump() {
+        return reader.read().then(function (x) {
+          if (x.done) return;
+          buf += dec.decode(x.value, { stream: true });
+          var i;
+          while ((i = buf.indexOf("\n\n")) >= 0) {
+            var block = buf.slice(0, i); buf = buf.slice(i + 2);
+            var ev = (/^event: (.*)$/m.exec(block) || [])[1], data = (/^data: (.*)$/m.exec(block) || [])[1];
+            if (ev && data) on(ev, JSON.parse(data));
+          }
+          return pump();
+        });
+      }
+      return pump();
+    }, function () { throw new Error("서버에 연결하지 못했어요. 서버가 켜져 있는지, 인터넷 연결을 확인해 주세요."); });
+  }
+
   $("ask").addEventListener("submit", function (e) {
     e.preventDefault();
     var q = $("q").value.trim();
     if (!q) return;
     var asof = $("asof").value || null, send = this.querySelector(".send");
+    var slow = mode === "ollama";
     add(esc(q), "me");
     $("q").value = ""; send.disabled = true;
     var t0 = Date.now(), box = add('<div class="thinking"><span class="dot" aria-hidden="true"></span><span>근거를 찾고 답을 쓰는 중이에요… <span class="sec">0</span>초</span></div>' +
-      '<div class="hint">이 서버는 답변에 30초~1분쯤 걸려요.</div>', "bot");
+      (slow ? '<div class="hint">내부(로컬) 모드는 답이 나오기 시작할 때까지 20초쯤 걸려요.</div>' : "") +
+      '<p class="ans live" hidden></p>', "bot");
     var timer = setInterval(function () { var s = box.querySelector(".sec"); if (s) s.textContent = Math.round((Date.now() - t0) / 1000); }, 1000);
-    api("POST", "/api/ask", { question: q, as_of: asof }).then(function (r) {
-      renderAnswer(box, r);
+    var finished = false;
+    askStream({ question: q, as_of: asof, mode: mode }, function (ev, d) {
+      var live = box.querySelector(".ans.live");
+      if (ev === "delta" && live) {
+        live.hidden = false; live.textContent += d.text;
+        var th = box.querySelector(".thinking span:last-child");
+        if (th) th.firstChild.textContent = "답을 쓰는 중이에요… ";
+        msgs.scrollTop = msgs.scrollHeight;
+      } else if (ev === "reset" && live) {
+        live.textContent = ""; live.hidden = true;
+        var hint = box.querySelector(".hint") || box.insertBefore(document.createElement("div"), live);
+        hint.className = "hint"; hint.textContent = d.note;
+      } else if (ev === "done") {
+        finished = true; renderAnswer(box, d);
+      } else if (ev === "error") {
+        finished = true; box.innerHTML = '<p class="warn">' + esc(d.detail) + "</p>";
+      }
+    }).then(function () {
+      if (!finished) box.innerHTML = '<p class="warn">답을 받는 중에 연결이 끊겼어요. 다시 질문해 주세요.</p>';
     }, function (err) {
       box.innerHTML = '<p class="warn">' + esc(err.message) + "</p>";
     }).then(function () { clearInterval(timer); send.disabled = false; $("q").focus(); });
@@ -300,7 +377,9 @@
       }).join("") + "</div>";
     }
     html += '<div class="src" id="' + id + '-src" hidden></div>';
-    if (hasDocs) html += '<div class="caveat">' + CAVEAT + (r.as_of ? " · " + esc(r.as_of) + " 버전 기준" : "") + "</div>";
+    if (r.note) html += '<div class="hint">' + esc(r.note) + "</div>";
+    if (hasDocs) html += '<div class="caveat">' + CAVEAT + (r.as_of ? " · " + esc(r.as_of) + " 버전 기준" : "") +
+      (r.mode_label ? " · " + esc(r.mode_label) + "로 작성" : "") + "</div>";
     box.innerHTML = html;
     var open = -1;
     box.querySelectorAll(".chips button").forEach(function (b) {
@@ -342,7 +421,8 @@
   }
 
   // ---------- 관리자 화면 ----------
-  var ACTION = { approve: "가입 승인", reject: "가입 거절", grant_admin: "관리자 지정", revoke_admin: "관리자 해제", set_public_url: "서버 주소 변경" };
+  var ACTION = { approve: "가입 승인", reject: "가입 거절", grant_admin: "관리자 지정", revoke_admin: "관리자 해제", set_public_url: "서버 주소 변경", set_llm: "답변 모델 변경" };
+  var PROVIDER = { gemini: "Gemini", ollama: "로컬", claude: "Claude" };
   function day(t) { return t ? t.slice(0, 16) : ""; }
   function showChat() {
     $("admin").hidden = true; document.querySelector(".chat").hidden = false;
@@ -474,6 +554,7 @@
         var src = (l.sources || []).map(function (s) { return esc(s.doc + " v" + s.version + " " + (s.article || "p." + s.page)) + (s.quotes && s.quotes.length ? "" : " (인용 미확인)"); }).join("<br>");
         return '<div class="log"><div class="meta"><span>' + day(l.created_at) + "</span><span>" + esc(l.name) + "</span>" +
           (l.as_of ? "<span>" + esc(l.as_of) + " 기준</span>" : "") +
+          (l.provider ? "<span>" + esc(PROVIDER[l.provider] || l.provider) + "</span>" : "") +
           '<span class="tag ' + (l.verified ? 'ok">인용 확인' : 'no">인용 없음') + "</span></div>" +
           '<div class="q">' + esc(l.question) + "</div>" +
           "<details><summary>답변과 출처 보기</summary><p>" + esc(l.answer) + "</p><p>" + (src || "출처 없음") + "</p></details></div>";
@@ -493,15 +574,36 @@
   }
 
   // 서버 설정
+  function drawLlm(l) {
+    var order = ["gemini", "ollama", "claude"];
+    $("llmlist").innerHTML = order.map(function (m) {
+      var ok = l.available[m], on = l.allowed.indexOf(m) >= 0;
+      return '<div class="row"><div class="who"><b>' + esc(l.labels[m]) + "</b><small>" + esc(l.notes[m]) +
+        (ok ? "" : " · <span class=\"tag no\">.env에 키가 없어 쓸 수 없어요</span>") + "</small></div>" +
+        '<div class="acts"><label class="chk"><input type="checkbox" data-allow="' + m + '"' + (on ? " checked" : "") + (ok ? "" : " disabled") + "> 허용</label>" +
+        '<label class="chk"><input type="radio" name="llmdef" value="' + m + '"' + (l.default === m ? " checked" : "") + (ok ? "" : " disabled") + "> 기본</label></div></div>";
+    }).join("");
+  }
+  $("llmform").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var allowed = [].map.call(document.querySelectorAll("[data-allow]:checked"), function (x) { return x.dataset.allow; });
+    var def = (document.querySelector("[name=llmdef]:checked") || {}).value;
+    $("llm-e").textContent = ""; $("llmmsg").textContent = "";
+    api("PUT", "/api/admin/llm", { default: def || "", allowed: allowed }).then(function () {
+      $("llmmsg").className = "note ok"; $("llmmsg").textContent = "저장했어요. 팀원 화면은 새로 고침하면 바뀌어요.";
+      loadModes();
+    }, function (err) { $("llm-e").textContent = err.message; });
+  });
   function loadSettings() {
     api("GET", "/api/admin/settings").then(function (s) {
+      if (s.llm) drawLlm(s.llm);
       $("pubu").value = s.public_url || location.origin;
       var d = s.ddns || {};
       $("pubinfo").textContent = (s.updated_at ? "마지막 변경: " + day(s.updated_at) + " · " + (s.updated_by || "") : "아직 저장한 적 없어요. 지금 보이는 값은 이 화면을 연 주소예요.") +
         (d.domain ? " · 주소 자동 갱신(" + d.domain + "): " + (d.ok == null ? "확인 중" : d.ok ? "정상 (" + day(d.last_at) + ")" : "실패 — .env의 DuckDNS 설정을 확인해 주세요") : " · 주소 자동 갱신: 설정 안 됨");
     }, function (err) { $("pubinfo").textContent = err.message; });
   }
-  $("t-set").addEventListener("submit", function (e) {
+  $("setform").addEventListener("submit", function (e) {
     e.preventDefault();
     clearErr(["pubu"]);
     var v = $("pubu").value.trim();

@@ -22,7 +22,8 @@
 | GET /admin/members | 승인된 사용자 전체(관리자 포함) + 관리자를 누가 언제 지정했는지 |
 | POST /admin/members/{id}/role | `{role: "admin" \| "viewer"}` 관리자 지정·해제. 승인된 사용자만, **마지막 관리자는 해제 불가(409)**. 작업 기록에 남음 |
 | GET /admin/audit | 작업 기록(승인·거절·관리자 지정/해제·설정 변경), 최근 순 |
-| GET · PUT /admin/settings | 서버 주소 `{public_url}` 조회·저장 (http(s):// 로 시작) |
+| GET · PUT /admin/settings | 서버 주소 `{public_url}` 조회·저장 (http(s):// 로 시작). 조회 시 DuckDNS 상태와 답변 모드 설정도 함께 |
+| PUT /admin/llm | 답변 모드 `{default, allowed:[…]}`. .env에 키가 있는 모델만 허용 가능. 작업 기록에 남음 |
 | POST /docs | 문서 업로드 (title, file: PDF·HWP·HWPX·HWPML). 같은 title이면 새 버전으로. 응답에 kind(pdf/hwp/hwpx/hwpml), pages(한글은 null), chunks(조문 조각 수) |
 | GET /admin/logs | 질문·답변 로그 (이름, 이메일, 출처, verified) |
 
@@ -33,7 +34,9 @@
 | GET /versions/{vid}/pages/{n} | 특정 버전의 n쪽 텍스트 |
 | GET /versions/{vid}/article?label=제7조(국가 등의 재정지원) | 조문 원문(출처 펼쳐 보기용), 시작·끝 페이지 |
 | GET /versions/{vid}/file | 원본 PDF 내려받기 |
-| POST /ask | 질문 `{question, as_of?}` |
+| GET /modes | 고를 수 있는 답변 모드와 기본값 `{default, modes:[{id,label,note}]}` |
+| POST /ask/stream | 질문 `{question, as_of?, mode?}` → 답을 쓰는 대로 보냄(SSE). 사건: `delta{text}` · `reset{note}`(다른 모델로 다시) · `done{…/ask 응답}` · `error{detail}` |
+| POST /ask | 같은 질문을 한 번에 받기(점검 스크립트용) |
 
 ## /ask 응답
 ```json
@@ -45,9 +48,12 @@
      "article": "제7조(국가 등의 재정지원)", "page": 2, "page_to": 2, "quotes": ["원문에서 그대로 잘라 온 구간"]}
   ],
   "also": [{"doc": "...", "version": 3, "version_id": 7, "article": "제4조(보험료의 지원)", "page": 1}],
-  "as_of": null
+  "as_of": null,
+  "mode": "gemini", "mode_label": "⚡ 빠름 (Gemini)",
+  "note": null
 }
 ```
+- `mode`: 실제로 답한 모델. `note`: 고른 모델이 실패해 다른 모델로 답했을 때의 안내.
 - `verified`: 원문과 대조해 확인된 인용이 하나라도 있는지. false면 화면에서 답변을 흐리게 + 경고.
 - `sources`: 답변이 인용한 조문. `quotes`는 서버가 원문과 대조해 확인된 것만, **원문에서 잘라 온 그대로** 담는다.
 - `also`: 검색에는 걸렸지만 인용되지 않은 관련 조문(최대 3).

@@ -98,6 +98,14 @@ header select{font-size:13px;background:var(--bg);border:1px solid var(--line);b
 .chips-label{font-size:12px;color:var(--mute);margin-top:10px}
 .caveat{font-size:12px;color:var(--mute);margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
 .thinking{display:flex;gap:10px;align-items:center;color:var(--mute)}
+.modes{display:flex;align-items:center;gap:6px;padding:8px 12px 0;border-top:1px solid var(--line);flex:none;flex-wrap:wrap}
+.modes button{font-size:13px;background:none;border:1px solid var(--line);border-radius:999px;padding:3px 12px;cursor:pointer;color:var(--mute)}
+.modes button[aria-checked="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.mode-note{font-size:12px;color:var(--mute);min-width:0}
+.modes:not([hidden])+.ask{border-top:0}
+.ans.live{color:var(--ink)}
+.ans.live::after{content:"▍";animation:pulse 1s steps(2) infinite;color:var(--mute)}
+@media(prefers-reduced-motion:reduce){.ans.live::after{animation:none}}
 .ask{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);flex:none}
 /* 16px 미만이면 아이폰이 입력할 때 화면을 확대해 헤더가 밀려나므로 16px로 둔다 */
 .ask input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:10px 16px;font-size:16px}
@@ -158,4 +166,6 @@ mark{background:var(--mark);color:inherit;padding:1px 0}
 .log details p{white-space:pre-wrap;color:var(--ink);margin:6px 0}
 .log summary{cursor:pointer}
 input[type=file]{padding:9px}
+.chk{display:inline-flex;align-items:center;gap:4px;margin:0;font-size:13px;font-weight:400;white-space:nowrap}
+.card .chk input{width:auto;padding:0}
 .no{margin-top:8px;text-align:right;font:12px "Noto Sans KR",sans-serif;color:var(--mute)}

@@ -12,11 +12,12 @@ from pathlib import Path
 
 import jwt
 import doctext  # PDF·한글 파일에서 글자 뽑기
+import llm  # 답변 모델 연결(ollama·gemini·claude)
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -26,17 +27,8 @@ KST = timezone(timedelta(hours=9))
 DATA = Path(os.getenv("DATA_DIR", "data"))
 FILES = DATA / "files"
 DB_PATH = DATA / "docchat.db"
-# 답변을 만드는 모델: ollama(로컬, 무료) 또는 claude(API 키 필요)
+# 답변 모드 기본값(관리자 화면에서 바꿀 수 있음): ollama(로컬) / gemini / claude. 모델 연결은 llm.py
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
-MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT") or "300")
-# 모델을 메모리에 붙잡아 두는 시간. 기본 5분이면 한동안 질문이 없을 때 다음 질문이 모델 불러오기만큼 느려진다
-OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE") or "60m"
-# 질문 하나에 모델에게 보내는 근거 조각(조문) 수와 조각당 글자 수 (로컬 모델은 적게 보내야 빠름)
-TOP_K = int(os.getenv("TOP_K") or ("3" if LLM_PROVIDER == "ollama" else "8"))
-CHUNK_CHARS = int(os.getenv("CHUNK_CHARS") or ("1000" if LLM_PROVIDER == "ollama" else "4000"))
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -113,6 +105,9 @@ def init():
         # 이전 DB 보강: 파일 형식(kind) 칸이 없으면 추가 (기존 버전은 모두 PDF)
         if "kind" not in {r["name"] for r in c.execute("PRAGMA table_info(versions)")}:
             c.execute("ALTER TABLE versions ADD COLUMN kind TEXT DEFAULT 'pdf'")
+        # 질문 기록에 어떤 모델로 답했는지 칸 추가 (이전 기록은 비어 있음)
+        if "provider" not in {r["name"] for r in c.execute("PRAGMA table_info(logs)")}:
+            c.execute("ALTER TABLE logs ADD COLUMN provider TEXT")
         # 조문 조각이 없는 기존 버전은 저장된 페이지 텍스트로 조각을 만든다
         for (vid, kind) in c.execute("SELECT id, kind FROM versions WHERE id NOT IN "
                                      "(SELECT DISTINCT version_id FROM chunks)").fetchall():
@@ -247,6 +242,7 @@ class Reset(BaseModel):
 class Ask(BaseModel):
     question: str
     as_of: str | None = None
+    mode: str | None = None  # 답변 모드(ollama/gemini/claude). 비우면 관리자가 정한 기본값
 
 
 @app.post("/api/auth/register")
@@ -483,7 +479,8 @@ def get_settings(admin=Depends(require_admin)):
                       "WHERE s.key='public_url'").fetchone()
     return {"public_url": r["value"] if r else "", "updated_at": r["updated_at"] if r else None,
             "updated_by": r["name"] if r else None,
-            "ddns": {"domain": DDNS["domain"], "last_at": DDNS["last_at"], "ok": DDNS["ok"]}}
+            "ddns": {"domain": DDNS["domain"], "last_at": DDNS["last_at"], "ok": DDNS["ok"]},
+            "llm": mode_settings() | {"labels": llm.LABELS, "notes": llm.NOTES}}
 
 
 @app.put("/api/admin/settings")
@@ -728,15 +725,6 @@ SYSTEM = """당신은 사내 문서 도우미입니다. 아래 <source> 안의 �
 - citations에는 근거가 된 소스 id와, 소스 본문의 문장을 한 글자도 바꾸지 말고 80자 이내로 복사해 넣으세요(1~2개).
 - 법적 판단이 필요한 내용은 문서에 적힌 대로만 전달하고, 단정하기 어렵다면 그렇게 말하세요.
 - 반드시 JSON만 출력하세요: {"answer": "...", "citations": [{"id": 1, "quote": "..."}]}"""
-ANSWER_SCHEMA = {
-    "type": "object", "required": ["answer", "citations"],
-    "properties": {
-        "answer": {"type": "string"},
-        "citations": {"type": "array", "items": {
-            "type": "object", "required": ["id", "quote"],
-            "properties": {"id": {"type": "integer"}, "quote": {"type": "string"}}}},
-    },
-}
 NOT_FOUND = "제공된 문서에서 근거를 찾지 못했어요. 질문을 조금 다르게 써 보시거나 문서가 등록되어 있는지 확인해 주세요."
 
 
@@ -816,58 +804,111 @@ def for_model(text, paged=True):
     return out
 
 
-def llm(prompt):
-    """SYSTEM 규칙과 질문을 모델에 보내고 응답 글자를 돌려준다. LLM_PROVIDER로 모델을 고른다."""
-    if LLM_PROVIDER == "claude":
-        from anthropic import Anthropic  # Claude를 쓸 때만 필요
-        msg = Anthropic().messages.create(
-            model=MODEL, max_tokens=1500, system=SYSTEM,
-            messages=[{"role": "user", "content": prompt}])
-        return "".join(x.text for x in msg.content if x.type == "text")
-    if LLM_PROVIDER == "ollama":
-        # 1차: 답변 형식(스키마)을 강제해 citations를 빠뜨리지 않게 한다.
-        # 2차: 로컬 모델이 가끔 생성 도중 실패(500)하므로 형식 지정 없이 다시 시도한다(parse_json이 처리).
-        for fmt in (ANSWER_SCHEMA, None):
-            body = {"model": OLLAMA_MODEL, "stream": False, "keep_alive": OLLAMA_KEEP_ALIVE,
-                    # num_predict: 답 길이 상한(토큰). 짧은 답 + 인용 1~2개면 충분하고, 길게 늘어지는 것을 막는다
-                    "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 450},
-                    "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}]}
-            if fmt:
-                body["format"] = fmt
-            req = urllib.request.Request(f"{OLLAMA_URL}/api/chat", data=json.dumps(body).encode(),
-                                         headers={"Content-Type": "application/json"})
-            try:
-                with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as r:
-                    return json.loads(r.read())["message"]["content"]
-            except urllib.error.HTTPError as e:
-                if fmt is None or e.code < 500:
-                    raise
-                print("Ollama 오류, 형식 지정 없이 다시 시도:", e)
-    raise ValueError(f"알 수 없는 LLM_PROVIDER: {LLM_PROVIDER} (ollama 또는 claude)")
-
-
-@app.post("/api/ask")
-def ask(b: Ask, u=Depends(current_user)):
-    q = b.question.strip()
-    if not q or len(q) > 1000:
-        raise err(400, "질문을 1,000자 이내로 입력해 주세요.")
-    if b.as_of and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", b.as_of):
-        raise err(400, "날짜는 2026-03-01 형식으로 입력해 주세요.")
+# ---------- 답변 모드 (관리자가 허용·기본값을 정하고, 사용자가 질문마다 고른다) ----------
+def mode_settings():
+    """{'default': 'gemini', 'allowed': ['gemini','ollama'], 'available': {...}}
+    allowed 기본값은 .env에 키가 있는(쓸 수 있는) 모델 전부. 쓸 수 없는 모델은 허용돼 있어도 빠진다."""
+    avail = llm.available()
     with db() as c:
-        vers = pick_versions(c, b.as_of)
-        hits = search(c, vers, q, TOP_K) if vers else []
-    if not vers:
-        return {"answer": "아직 등록된 문서가 없어요. 관리자가 문서를 올리면 물어볼 수 있어요.", "sources": [], "also": []}
-    if not hits:
-        return {"answer": NOT_FOUND, "sources": [], "also": []}
+        rows = dict(c.execute("SELECT key, value FROM settings WHERE key IN ('llm_default','llm_allowed')").fetchall())
+    allowed = [m for m in (rows.get("llm_allowed") or ",".join(m for m, ok in avail.items() if ok)).split(",")
+               if m in avail and avail[m]] or ["ollama"]
+    default = rows.get("llm_default") or LLM_PROVIDER
+    if default not in allowed:
+        default = allowed[0]
+    return {"default": default, "allowed": allowed, "available": avail}
 
+
+def resolve_mode(asked):
+    s = mode_settings()
+    if asked and asked not in s["allowed"]:
+        raise err(400, "지금은 쓸 수 없는 답변 모드예요. 화면을 새로 고쳐 주세요.")
+    return asked or s["default"]
+
+
+@app.get("/api/modes")
+def modes(u=Depends(current_user)):
+    s = mode_settings()
+    return {"default": s["default"],
+            "modes": [{"id": m, "label": llm.LABELS[m], "note": llm.NOTES[m]} for m in s["allowed"]]}
+
+
+class ModeBody(BaseModel):
+    default: str
+    allowed: list[str]
+
+
+@app.put("/api/admin/llm")
+def put_modes(b: ModeBody, admin=Depends(require_admin)):
+    avail = llm.available()
+    allowed = [m for m in dict.fromkeys(b.allowed) if avail.get(m)]
+    if not allowed:
+        raise err(400, "답변 모드를 하나 이상 허용해 주세요. (Gemini·Claude는 .env에 키가 있어야 해요)")
+    if b.default not in allowed:
+        raise err(400, "기본 모드는 허용한 모드 중에서 골라 주세요.")
+    with db() as c:
+        for k, v in (("llm_allowed", ",".join(allowed)), ("llm_default", b.default)):
+            c.execute("REPLACE INTO settings(key,value,updated_by,updated_at) VALUES(?,?,?,?)", (k, v, admin["id"], now()))
+        audit(c, admin["id"], "set_llm", None, f"기본 {b.default} · 허용 {', '.join(allowed)}")
+    return mode_settings()
+
+
+# ---------- 질문 처리: 검색 → 모델(스트리밍) → 인용 검증 → 기록 ----------
+def build_prompt(hits, chars, q):
     ctx = "\n".join(f'<source id="{i}" doc="{v["title"]}" version="v{v["version"]}" article="{ch["label"]}">\n'
-                    f'{for_model(ch["text"], is_paged(v))[:CHUNK_CHARS]}\n</source>' for i, (s, v, ch) in enumerate(hits, 1))
-    try:
-        raw = llm(f"{ctx}\n\n질문: {q}")
-    except Exception as e:
-        print(f"모델 호출 실패({LLM_PROVIDER}):", e)
-        raise err(502, "답변을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
+                    f'{for_model(ch["text"], is_paged(v))[:chars]}\n</source>' for i, (s, v, ch) in enumerate(hits, 1))
+    return f"{ctx}\n\n질문: {q}"
+
+
+def attempts_for(mode):
+    """실패하면 차례로 시도할 (모델, 형식강제) 목록. 외부 모델이 한도·오류로 실패하면 로컬 모델로 답한다."""
+    plan = [(mode, True)]
+    if mode == "ollama":
+        plan.append(("ollama", False))  # 로컬 모델은 가끔 형식 강제 상태에서 멈춘다 → 형식 없이 한 번 더
+    else:
+        plan += [("ollama", True), ("ollama", False)]
+    return plan
+
+
+def answer_events(q, as_of, mode, u):
+    """질문 하나를 처리하며 (사건, 내용)을 차례로 내준다: delta(답 글자) · reset(다른 모델로 다시) · done · error"""
+    with db() as c:
+        vers = pick_versions(c, as_of)
+    if not vers:
+        yield "done", {"answer": "아직 등록된 문서가 없어요. 관리자가 문서를 올리면 물어볼 수 있어요.", "sources": [], "also": []}
+        return
+    raw = last = None
+    for n, (p, strict) in enumerate(attempts_for(mode)):
+        k, chars = llm.LIMITS[p]
+        with db() as c:
+            hits = search(c, vers, q, k)
+        if not hits:
+            yield "done", {"answer": NOT_FOUND, "sources": [], "also": [], "mode": p}
+            return
+        if n:
+            yield "reset", {"note": f"{last.user_msg} — {llm.LABELS[p]}로 다시 답하는 중이에요"}
+        ext, parts = llm.AnswerStream(), []
+        try:
+            for t in llm.stream(p, SYSTEM, build_prompt(hits, chars, q), strict):
+                parts.append(t)
+                new = ext.feed(t)
+                if new:
+                    yield "delta", {"text": new}
+            raw, used = "".join(parts), p
+            break
+        except llm.ModelError as e:
+            print(f"모델 호출 실패: {e}", flush=True)
+            last = e
+            if not e.fallback:
+                break
+    if raw is None:
+        yield "error", {"detail": f"답변을 만들지 못했어요({last.user_msg if last else '알 수 없는 오류'}). 잠시 후 다시 시도해 주세요."}
+        return
+    note = f"{llm.LABELS[mode]}가 응답하지 않아 {llm.LABELS[used]}로 답했어요 ({last.user_msg})" if used != mode else None
+    yield "done", finish_answer(raw, hits, q, as_of, u, used, note)
+
+
+def finish_answer(raw, hits, q, as_of, u, used, note):
     data = parse_json(raw) or {}
     answer = data.get("answer") or raw.strip() or NOT_FOUND
     # 답변 본문에 섞여 나온 내부 표시 정리: <source …>, (source id="1"), (citations: …), [1] 등
@@ -903,16 +944,50 @@ def ask(b: Ask, u=Depends(current_user)):
              "article": ch["label"], "page": ch["page_from"]}
             for i, (s, v, ch) in enumerate(hits, 1) if i not in cited][:3]
     with db() as c:
-        c.execute("INSERT INTO logs(user_id,question,as_of,answer,sources,created_at) VALUES(?,?,?,?,?,?)",
-                  (u["id"], q, b.as_of, answer, json.dumps(sources, ensure_ascii=False), now()))
+        c.execute("INSERT INTO logs(user_id,question,as_of,answer,sources,created_at,provider) VALUES(?,?,?,?,?,?,?)",
+                  (u["id"], q, as_of, answer, json.dumps(sources, ensure_ascii=False), now(), used))
     verified = any(s["quotes"] for s in sources)  # 원문과 대조해 확인된 인용이 하나라도 있는지 (화면 표시용)
-    return {"answer": answer, "verified": verified, "sources": sources, "also": also, "as_of": b.as_of}
+    return {"answer": answer, "verified": verified, "sources": sources, "also": also, "as_of": as_of,
+            "mode": used, "mode_label": llm.LABELS[used], "note": note}
+
+
+def check_question(b):
+    q = b.question.strip()
+    if not q or len(q) > 1000:
+        raise err(400, "질문을 1,000자 이내로 입력해 주세요.")
+    if b.as_of and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", b.as_of):
+        raise err(400, "날짜는 2026-03-01 형식으로 입력해 주세요.")
+    return q, resolve_mode(b.mode)
+
+
+@app.post("/api/ask")
+def ask(b: Ask, u=Depends(current_user)):
+    """한 번에 결과만 받는 질문(점검 스크립트용). 화면은 /api/ask/stream 을 쓴다."""
+    q, mode = check_question(b)
+    for kind, data in answer_events(q, b.as_of, mode, u):
+        if kind == "done":
+            return data
+        if kind == "error":
+            raise err(502, data["detail"])
+
+
+@app.post("/api/ask/stream")
+def ask_stream(b: Ask, u=Depends(current_user)):
+    """답을 쓰는 대로 보내는 질문(Server-Sent Events). 사건: delta · reset · done · error"""
+    q, mode = check_question(b)
+
+    def events():
+        for kind, data in answer_events(q, b.as_of, mode, u):
+            yield f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/admin/logs")
 def logs(limit: int = 50, admin=Depends(require_admin)):
     with db() as c:
-        rows = c.execute("SELECT l.id, u.name, u.email, l.question, l.as_of, l.answer, l.sources, l.created_at "
+        rows = c.execute("SELECT l.id, u.name, u.email, l.question, l.as_of, l.answer, l.sources, l.created_at, l.provider "
                          "FROM logs l JOIN users u ON u.id=l.user_id ORDER BY l.id DESC LIMIT ?",
                          (min(limit, 200),)).fetchall()
     out = []

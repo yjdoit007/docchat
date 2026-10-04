@@ -34,7 +34,7 @@
 - 검색과 출처는 **조문(제N조) 단위**. 출처 표시는 "문서 vN 제N조(제목) p.N". 조문이 없는 문서는 페이지 단위(PDF) 또는 "부분 N"(한글).
 - 올릴 수 있는 문서: PDF, 한글(HWP·HWPX·HWPML). 한글 문서는 페이지 번호가 없다.
 - 서버: FastAPI + SQLite + PyMuPDF + LLM. 서버가 `static\` 폴더의 웹앱도 같이 제공한다(접속 주소 하나).
-- LLM: 기본은 **로컬 Ollama(무료, gemma3:4b)**. `.env`의 `LLM_PROVIDER=claude`로 Claude API로 바꿀 수 있다. 사용자는 무료 운영을 원한다.
+- LLM(`server\llm.py`): 답변 모드 **⚡Gemini(무료 등급, 외부 전송)** / **🔒로컬 Ollama(gemma3:4b, 느림)** / Claude(유료). 관리자 화면 > 서버 설정 > 답변 모델에서 허용·기본값을 정하고, 사용자는 입력창 위에서 질문마다 고른다. 외부 모델 실패 시 로컬로 자동 전환. 답은 쓰는 대로 흘려보낸다(`/api/ask/stream`). 사용자는 무료 운영을 원한다.
 
 ## 현재 상태 (2026-10-04 기준)
 - 완료: 설계 문서, `server.py` 실제 실행 확인(Python 3.12, `.venv`), Ollama(gemma3:4b) 연동, 조문 단위 검색·인용 검증.
