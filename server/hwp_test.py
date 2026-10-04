@@ -44,6 +44,13 @@ check("한글 문서는 페이지 번호 없음", all(c[1] is None for c in hc))
 check("머리글·바닥글 글자 제외, [시행 …] 줄 포함",
       "국가법령정보센터" not in texts[0] and "[시행 2024. 5. 14.]" in texts[0])
 
+for hx in sorted(SAMPLES.glob("*.hwpx")):  # 국가법령정보센터에서 받은 실제 HWPX
+    kind, texts = doctext.extract(hx.read_bytes())
+    xc = S.make_chunks(texts, False)
+    pc2 = S.make_chunks(doctext.extract(hx.with_suffix(".pdf").read_bytes())[1])
+    check(f"실제 HWPX 조문 목록이 PDF와 같음: {hx.stem}", kind == "hwpx" and [c[0] for c in xc] == [c[0] for c in pc2],
+          f"{len(xc)}개")
+
 law = ["제1조(목적) 이 규정은 시험용이다.", "제2조(정의) 이 규정에서 쓰는 말의 뜻은 다음과 같다.", "1. 가나다"]
 kind, texts = doctext.extract(fake_hwpx(law))
 check("HWPX 인식", kind == "hwpx")
