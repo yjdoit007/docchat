@@ -172,8 +172,8 @@
         d.versions.forEach(function (v, i) {
           var day = v.uploaded_at.slice(0, 10);
           dates[day] = true;
-          var row = '<button class="doc" type="button" data-vid="' + v.id + '" title="원본 PDF 열기">' + esc(d.title) +
-            (i ? " v" + v.version : "") + "<small>v" + v.version + " · " + day + " · " + v.page_count + "쪽</small></button>";
+          var row = '<button class="doc" type="button" data-vid="' + v.id + '" data-kind="' + esc(v.kind || "pdf") + '" title="' + fileLink(v.kind) + '">' + esc(d.title) +
+            (i ? " v" + v.version : "") + "<small>v" + v.version + " · " + day + " · " + kindLabel(v) + "</small></button>";
           (i ? old : cur).push(row);
         });
       });
@@ -188,15 +188,27 @@
   }
   document.addEventListener("click", function (e) {
     var b = e.target.closest(".doc[data-vid], [data-pdf]");
-    if (b) openPdf(b.dataset.vid || b.dataset.pdf, b.dataset.page);
+    if (b) openFile(b.dataset.vid || b.dataset.pdf, b.dataset.page, b.dataset.kind);
   });
-  function openPdf(vid, page) {
-    var w = window.open("", "_blank");
+  function isPdf(kind) { return !kind || kind === "pdf"; }
+  function kindLabel(v) { return isPdf(v.kind) ? (v.page_count + "쪽") : "한글 문서"; }
+  function fileLink(kind) { return isPdf(kind) ? "원본 PDF 보기" : "원본 한글 파일 받기"; }
+  // PDF는 새 탭에서 해당 페이지로 열고, 한글 파일은 내려받는다 (브라우저가 한글 파일을 바로 보여 주지 못함)
+  function openFile(vid, page, kind) {
+    var w = isPdf(kind) ? window.open("", "_blank") : null;
     fetch("/api/versions/" + vid + "/file", { headers: { Authorization: "Bearer " + token } })
-      .then(function (r) { if (!r.ok) throw new Error(); return r.blob(); })
-      .then(function (b) {
-        var url = URL.createObjectURL(b) + (page ? "#page=" + page : "");
-        if (w) w.location.href = url; else location.href = url;
+      .then(function (r) {
+        if (!r.ok) throw new Error();
+        var cd = r.headers.get("Content-Disposition") || "", m = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)/i.exec(cd);
+        var name = m ? decodeURIComponent(m[1] || m[2]) : "document";
+        return r.blob().then(function (b) { return { b: b, name: name }; });
+      })
+      .then(function (f) {
+        var url = URL.createObjectURL(f.b);
+        if (isPdf(kind)) { url += page ? "#page=" + page : ""; if (w) w.location.href = url; else location.href = url; return; }
+        var a = document.createElement("a"); a.href = url; a.download = f.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
       }, function () { if (w) w.close(); alert("원본 파일을 열지 못했어요."); });
   }
 
@@ -298,9 +310,9 @@
     el.innerHTML = '<div class="bar"><b>' + esc(s.doc) + "</b><span class=\"badge\">v" + s.version + " · " + esc(s.article || "") + "</span></div>" +
       '<div class="sheet">불러오는 중…</div>';
     api("GET", "/api/versions/" + s.version_id + "/article?label=" + encodeURIComponent(s.article)).then(function (a) {
-      var pages = a.page_from === a.page_to ? a.page_from + "쪽" : a.page_from + "~" + a.page_to + "쪽";
+      var pages = a.page_from == null ? "한글 문서" : a.page_from === a.page_to ? a.page_from + "쪽" : a.page_from + "~" + a.page_to + "쪽";
       el.innerHTML = '<div class="bar"><b>' + esc(a.title) + '</b><span class="badge">v' + a.version + " · " + esc(a.uploaded_at.slice(0, 10)) + " 등록 · " + pages + "</span>" +
-        '<button type="button" class="lnk" data-pdf="' + s.version_id + '" data-page="' + a.page_from + '">원본 PDF 보기</button></div>' +
+        '<button type="button" class="lnk" data-pdf="' + s.version_id + '" data-kind="' + esc(a.kind || "pdf") + '" data-page="' + (a.page_from || "") + '">' + fileLink(a.kind) + "</button></div>" +
         '<div class="sheet">' + highlight(a.text, s.quotes) +
         '<div class="no">' + (s.quotes && s.quotes.length ? "형광펜: 원문과 대조해 확인된 인용" : "관련 조문 (확인된 인용 없음)") + "</div></div>";
       el.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -339,9 +351,10 @@
       $("titles").innerHTML = docs.map(function (d) { return '<option value="' + esc(d.title) + '">'; }).join("");
       el.innerHTML = docs.length ? docs.map(function (d) {
         var v = d.versions[0];
-        return '<div class="row"><div class="who"><b>' + esc(d.title) + "</b><small>최신 v" + v.version + " · " + day(v.uploaded_at) + " · " + v.page_count + "쪽</small>" +
+        return '<div class="row"><div class="who"><b>' + esc(d.title) + "</b><small>최신 v" + v.version + " · " + day(v.uploaded_at) + " · " + kindLabel(v) + "</small>" +
           '<div class="vers">' + d.versions.map(function (x) {
-            return '<button type="button" data-pdf="' + x.id + '" title="원본 PDF 열기">v' + x.version + " · " + x.uploaded_at.slice(0, 10) + "</button>";
+            return '<button type="button" data-pdf="' + x.id + '" data-kind="' + esc(x.kind || "pdf") + '" title="' + fileLink(x.kind) + '">v' + x.version + " · " + x.uploaded_at.slice(0, 10) +
+              (isPdf(x.kind) ? "" : " · 한글") + "</button>";
           }).join("") + "</div></div></div>";
       }).join("") : '<div class="empty">등록된 문서가 없어요. 위에서 첫 문서를 올려 주세요.</div>';
     }, fail(el));
@@ -352,14 +365,14 @@
     clearErr(["uptitle", "upfile"]); msg.textContent = ""; msg.className = "note";
     if (!title) { bad("uptitle", "문서 이름을 입력해 주세요."); return; }
     if (!file) { bad("upfile", "올릴 PDF 파일을 골라 주세요."); return; }
-    if (!/\.pdf$/i.test(file.name)) { bad("upfile", "지금은 PDF 파일만 올릴 수 있어요."); return; }
+    if (!/\.(pdf|hwp|hwpx)$/i.test(file.name)) { bad("upfile", "PDF 또는 한글(HWP, HWPX) 파일만 올릴 수 있어요."); return; }
     var fd = new FormData(); fd.append("title", title); fd.append("file", file);
     busy(f, true); msg.textContent = "올리는 중이에요… 글자를 읽고 조문 단위로 나누는 데 몇 초 걸려요.";
     fetch("/api/docs", { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.detail || "올리지 못했어요."); return d; }); })
       .then(function (d) {
         msg.className = "note ok";
-        msg.textContent = "올렸어요: " + d.document + " v" + d.version + " (" + d.pages + "쪽, 검색 조각 " + d.chunks + "개)";
+        msg.textContent = "올렸어요: " + d.document + " v" + d.version + " (" + (d.pages ? d.pages + "쪽" : "한글 문서") + ", 검색 조각 " + d.chunks + "개)";
         $("upfile").value = ""; loadDocList(); loadDocs();
       }, function (err) { msg.className = "note bad"; msg.textContent = err.message; })
       .then(function () { busy(f, false); });

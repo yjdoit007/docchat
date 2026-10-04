@@ -6,3 +6,4 @@ pyjwt
 argon2-cffi
 anthropic
 python-dotenv
+olefile

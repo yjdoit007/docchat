@@ -23,7 +23,7 @@
 | POST /admin/members/{id}/role | `{role: "admin" \| "viewer"}` 관리자 지정·해제. 승인된 사용자만, **마지막 관리자는 해제 불가(409)**. 작업 기록에 남음 |
 | GET /admin/audit | 작업 기록(승인·거절·관리자 지정/해제·설정 변경), 최근 순 |
 | GET · PUT /admin/settings | 서버 주소 `{public_url}` 조회·저장 (http(s):// 로 시작) |
-| POST /docs | PDF 업로드 (title, file). 같은 title이면 새 버전으로. 응답에 pages, chunks(조문 조각 수) |
+| POST /docs | 문서 업로드 (title, file: PDF·HWP·HWPX·HWPML). 같은 title이면 새 버전으로. 응답에 kind(pdf/hwp/hwpx/hwpml), pages(한글은 null), chunks(조문 조각 수) |
 | GET /admin/logs | 질문·답변 로그 (이름, 이메일, 출처, verified) |
 
 ## 공통(로그인 필요)
@@ -54,6 +54,8 @@
 - `as_of`: `YYYY-MM-DD`. 그 날짜 끝까지 올라온 문서별 최신 버전 기준.
 
 ## 제한
-- 업로드: PDF만, 100MB 이하, 텍스트가 없는 스캔 PDF는 거절(OCR 필요).
+- 업로드: PDF·한글(HWP, HWPX, HWPML), 100MB 이하. 형식은 파일 내용으로 판별(확장자 아님).
+  텍스트가 없는 스캔 PDF, 암호·배포용 한글 파일은 거절.
+- 한글 문서는 페이지 번호가 없어 `page`, `page_count`, `page_from/page_to`가 null이다. 원본 내려받기는 올린 파일 그대로.
 - 질문 1,000자 이내.
 - 업로드 시각은 한국 시간(KST)으로 저장.

@@ -130,12 +130,12 @@
    <div class="tab on" id="t-docs" role="tabpanel">
     <form class="card" id="upform" novalidate>
      <h2>문서 올리기</h2>
-     <p class="sub">같은 이름으로 올리면 새 버전(v2, v3 …)으로 쌓여요. 이전 버전은 지워지지 않아요. 지금은 PDF만 올릴 수 있어요.</p>
+     <p class="sub">같은 이름으로 올리면 새 버전(v2, v3 …)으로 쌓여요. 이전 버전은 지워지지 않아요. PDF와 한글(HWP, HWPX) 파일을 올릴 수 있어요. 한글 문서는 페이지 번호 없이 조문으로 출처를 보여 줘요.</p>
      <label for="uptitle">문서 이름</label>
      <input id="uptitle" list="titles" placeholder="예: 풍수해ㆍ지진재해보험법" autocomplete="off"><datalist id="titles"></datalist>
      <div class="hint">기존 문서의 새 버전이면 목록에서 같은 이름을 고르세요.</div><div class="err" id="uptitle-e"></div>
-     <label for="upfile">PDF 파일</label>
-     <input id="upfile" type="file" accept="application/pdf,.pdf"><div class="err" id="upfile-e"></div>
+     <label for="upfile">파일 (PDF, HWP, HWPX)</label>
+     <input id="upfile" type="file" accept="application/pdf,.pdf,.hwp,.hwpx"><div class="err" id="upfile-e"></div>
      <div id="upmsg" class="note" role="status"></div>
      <button class="pri" type="submit">올리기</button>
     </form>

@@ -10,8 +10,8 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
-import pymupdf as fitz  # PyMuPDF
 import jwt
+import doctext  # PDF·한글 파일에서 글자 뽑기
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from dotenv import load_dotenv
@@ -108,10 +108,14 @@ def init():
     FILES.mkdir(parents=True, exist_ok=True)
     with db() as c:
         c.executescript(SCHEMA)
+        # 이전 DB 보강: 파일 형식(kind) 칸이 없으면 추가 (기존 버전은 모두 PDF)
+        if "kind" not in {r["name"] for r in c.execute("PRAGMA table_info(versions)")}:
+            c.execute("ALTER TABLE versions ADD COLUMN kind TEXT DEFAULT 'pdf'")
         # 조문 조각이 없는 기존 버전은 저장된 페이지 텍스트로 조각을 만든다
-        for (vid,) in c.execute("SELECT id FROM versions WHERE id NOT IN (SELECT DISTINCT version_id FROM chunks)").fetchall():
+        for (vid, kind) in c.execute("SELECT id, kind FROM versions WHERE id NOT IN "
+                                     "(SELECT DISTINCT version_id FROM chunks)").fetchall():
             texts = [r["text"] for r in c.execute("SELECT text FROM pages WHERE version_id=? ORDER BY page_no", (vid,))]
-            save_chunks(c, vid, texts)
+            save_chunks(c, vid, texts, (kind or "pdf") == "pdf")
         if ADMIN_EMAIL and ADMIN_PASSWORD and not c.execute(
                 "SELECT 1 FROM users WHERE email=?", (ADMIN_EMAIL,)).fetchone():
             c.execute("INSERT INTO users(name,email,pw_hash,role,status,created_at) VALUES(?,?,?,?,?,?)",
@@ -469,15 +473,11 @@ def upload(title: str = Form(...), file: UploadFile = File(...), admin=Depends(r
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise err(413, "파일이 너무 커요. 100MB 이하로 올려 주세요.")
-    if not data.startswith(b"%PDF"):
-        raise err(400, "PDF 파일만 올릴 수 있어요.")
     try:
-        pdf = fitz.open(stream=data, filetype="pdf")
-        texts = [p.get_text() for p in pdf]
-    except Exception:
-        raise err(400, "PDF를 읽지 못했어요. 파일이 손상됐는지 확인해 주세요.")
-    if not any(t.strip() for t in texts):
-        raise err(400, "텍스트가 없는 스캔 PDF예요. 글자 인식(OCR)을 거쳐서 다시 올려 주세요.")
+        kind, texts = doctext.extract(data)
+    except doctext.DocError as e:
+        raise err(400, str(e))
+    paged = kind == "pdf"  # 한글 문서는 고정된 페이지가 없어 페이지 번호를 쓰지 않는다
     sha = hashlib.sha256(data).hexdigest()
     with db() as c:
         d = c.execute("SELECT id FROM documents WHERE title=?", (title,)).fetchone()
@@ -491,14 +491,19 @@ def upload(title: str = Form(...), file: UploadFile = File(...), admin=Depends(r
         else:
             doc_id = c.execute("INSERT INTO documents(title,created_at) VALUES(?,?)", (title, now())).lastrowid
             ver = 1
-        vid = c.execute("INSERT INTO versions(doc_id,version,filename,uploaded_at,uploaded_by,sha256,page_count) "
-                        "VALUES(?,?,?,?,?,?,?)",
-                        (doc_id, ver, file.filename, now(), admin["id"], sha, len(texts))).lastrowid
+        vid = c.execute("INSERT INTO versions(doc_id,version,filename,uploaded_at,uploaded_by,sha256,page_count,kind) "
+                        "VALUES(?,?,?,?,?,?,?,?)",
+                        (doc_id, ver, file.filename, now(), admin["id"], sha, len(texts) if paged else None, kind)).lastrowid
         c.executemany("INSERT INTO pages VALUES(?,?,?)", [(vid, i + 1, t) for i, t in enumerate(texts)])
-        n_chunks = save_chunks(c, vid, texts)
+        n_chunks = save_chunks(c, vid, texts, paged)
     (FILES / str(doc_id)).mkdir(parents=True, exist_ok=True)
-    (FILES / str(doc_id) / f"v{ver}.pdf").write_bytes(data)
-    return {"document": title, "version": ver, "version_id": vid, "pages": len(texts), "chunks": n_chunks}
+    stored_file(doc_id, ver, kind).write_bytes(data)
+    return {"document": title, "version": ver, "version_id": vid, "kind": kind,
+            "pages": len(texts) if paged else None, "chunks": n_chunks}
+
+
+def stored_file(doc_id, ver, kind):
+    return FILES / str(doc_id) / f"v{ver}.{kind or 'pdf'}"
 
 
 @app.get("/api/docs")
@@ -507,7 +512,7 @@ def list_docs(u=Depends(current_user)):
         docs = c.execute("SELECT id,title FROM documents ORDER BY title").fetchall()
         out = []
         for d in docs:
-            vs = c.execute("SELECT id,version,uploaded_at,page_count FROM versions WHERE doc_id=? "
+            vs = c.execute("SELECT id,version,uploaded_at,page_count,kind FROM versions WHERE doc_id=? "
                            "ORDER BY version DESC", (d["id"],)).fetchall()
             out.append({"id": d["id"], "title": d["title"], "versions": [dict(v) for v in vs]})
     return out
@@ -528,24 +533,29 @@ def get_page(vid: int, n: int, u=Depends(current_user)):
 def get_article(vid: int, label: str, u=Depends(current_user)):
     """출처 펼쳐 보기용 조문 원문. PDF 줄바꿈으로 끊긴 낱말만 잇고 나머지(개정 표시 포함)는 원문 그대로."""
     with db() as c:
-        r = c.execute("SELECT ch.label, ch.page_from, ch.page_to, ch.text, v.version, v.uploaded_at, d.title "
+        r = c.execute("SELECT ch.label, ch.page_from, ch.page_to, ch.text, v.version, v.uploaded_at, v.kind, d.title "
                       "FROM chunks ch JOIN versions v ON v.id=ch.version_id JOIN documents d ON d.id=v.doc_id "
                       "WHERE ch.version_id=? AND ch.label=?", (vid, label)).fetchone()
     if not r:
         raise err(404, "해당 조문을 찾을 수 없어요.")
     out = dict(r)
-    out["text"] = re.sub(r"(?<=[가-힣])[ \t]*\n[ \t]*(?=[가-힣])", "", r["text"])
+    out["text"] = join_wrapped(r["text"]) if r["kind"] == "pdf" else r["text"]
     return out
+
+
+def join_wrapped(text):
+    """PDF에서 글자 수 때문에 줄이 바뀌며 끊긴 낱말을 잇는다(한글 문서는 줄바꿈이 문단 경계라 쓰지 않음)."""
+    return re.sub(r"(?<=[가-힣])[ \t]*\n[ \t]*(?=[가-힣])", "", text)
 
 
 @app.get("/api/versions/{vid}/file")
 def get_file(vid: int, u=Depends(current_user)):
     with db() as c:
-        r = c.execute("SELECT doc_id, version, filename FROM versions WHERE id=?", (vid,)).fetchone()
-    p = r and FILES / str(r["doc_id"]) / f"v{r['version']}.pdf"
+        r = c.execute("SELECT doc_id, version, filename, kind FROM versions WHERE id=?", (vid,)).fetchone()
+    p = r and stored_file(r["doc_id"], r["version"], r["kind"])
     if not r or not p.exists():
         raise err(404, "원본 파일을 찾을 수 없어요.")
-    return FileResponse(p, media_type="application/pdf", filename=r["filename"])
+    return FileResponse(p, media_type=doctext.KINDS[r["kind"] or "pdf"][0], filename=r["filename"])
 
 
 # ---------- 조문 단위 조각 ----------
@@ -565,9 +575,22 @@ def strip_running_lines(texts):
             for ls in pages]
 
 
-def make_chunks(texts):
-    """페이지 텍스트를 조문(제N조) 단위로 나눈다. 조문이 없는 문서는 페이지 단위로 둔다.
+def make_chunks(texts, paged=True):
+    """페이지 텍스트를 조문(제N조) 단위로 나눈다. 조문이 없는 문서는 PDF면 페이지 단위,
+    한글 문서(paged=False, 페이지 번호 없음)면 문단을 약 800자씩 묶은 '부분 N' 단위로 둔다.
     반환: [(label, page_from, page_to, text)]"""
+    if not paged:
+        out = make_chunks(texts, True)
+        if out and not out[0][0].startswith("p."):  # 조문 구조: 페이지 번호만 지운다
+            return [(lb, None, None, t) for lb, pf, pt, t in out]
+        parts, cur = [], []
+        for para in "\n".join(texts).splitlines():
+            cur.append(para)
+            if sum(len(x) for x in cur) >= 800:
+                parts.append("\n".join(cur)); cur = []
+        if cur:
+            parts.append("\n".join(cur))
+        return [(f"부분 {i}", None, None, t.strip()) for i, t in enumerate(parts, 1) if t.strip()]
     pages = strip_running_lines(texts)
     chunks, cur, prefix, last = [], None, "", -1
     for pno, page in enumerate(pages, 1):
@@ -596,8 +619,8 @@ def make_chunks(texts):
     return out
 
 
-def save_chunks(c, vid, texts):
-    rows = make_chunks(texts)
+def save_chunks(c, vid, texts, paged=True):
+    rows = make_chunks(texts, paged)
     c.executemany("INSERT INTO chunks VALUES(?,?,?,?,?,?)",
                   [(vid, i, lb, pf, pt, t) for i, (lb, pf, pt, t) in enumerate(rows)])
     return len(rows)
@@ -701,7 +724,12 @@ def norm(s):
 
 
 # 개정 표시: <개정 2024. 2. 13.>, <신설 ...>, [전문개정 ...], [제목개정 ...], [본조신설 ...] 등
-NOTE_RE = re.compile(r"<(?:개정|신설|삭제|타법개정)[^>]*>|\[(?:전문개정|제목개정|본조신설|종전[^\]]*|[^\]]*이동)[^\]]*\]")
+def _loose(*words):  # PDF 줄바꿈이 낱말 한가운데 끼어도(예: '<개\n정 …>') 알아보도록 글자 사이 공백 허용
+    return "|".join(r"\s*".join(map(re.escape, w)) for w in words)
+
+
+NOTE_RE = re.compile(rf"<\s*(?:{_loose('개정', '신설', '삭제', '타법개정')})[^>]*>"
+                     rf"|\[\s*(?:{_loose('전문개정', '제목개정', '본조신설')}|종전[^\]]*|[^\]]*이동)[^\]]*\]")
 # 인용 대조 때 무시하는 문자(공백·따옴표·괄호 모양)와 같은 글자로 보는 문자(가운뎃점)
 _SKIP = set(" \t\r\n 「」『』«»<>“”\"'‘’")
 _FOLD = {"·": "ㆍ", "・": "ㆍ", "∙": "ㆍ", "‧": "ㆍ"}
@@ -721,7 +749,7 @@ def _fold(text):
     return "".join(out), pos
 
 
-def find_quote(quote, text):
+def find_quote(quote, text, paged=True):
     """모델이 적은 인용을 원문에서 찾아 **원문 그대로의 구간**을 돌려준다. 없으면 None.
     띄어쓰기·따옴표/괄호 모양·가운뎃점·개정 표시 차이만 허용한다."""
     q, _ = _fold(quote)
@@ -732,18 +760,23 @@ def find_quote(quote, text):
     if i < 0:
         return None
     span = text[pos[i]:pos[i + len(q) - 1] + 1]
-    span = re.sub(r"(?<=[가-힣])[ \t]*\n[ \t]*(?=[가-힣])", "", span)  # PDF 줄바꿈으로 끊긴 낱말 잇기
+    if paged:
+        span = join_wrapped(span)
     return re.sub(r"\s+", " ", span).strip()
 
 
-def for_model(text):
-    """모델에게 보낼 원문 정리: 개정 표시를 빼고, PDF에서 글자 수 때문에 끊긴 줄을 잇는다."""
+def is_paged(version_row):
+    return (version_row["kind"] or "pdf") == "pdf"
+
+
+def for_model(text, paged=True):
+    """모델에게 보낼 원문 정리: 개정 표시를 빼고, PDF에서 글자 수 때문에 끊긴 줄을 잇는다(한글 문서는 잇지 않음)."""
     text = NOTE_RE.sub("", text)
     lines = [l.rstrip() for l in text.splitlines() if l.strip()]
     out = ""
     for prev, cur in zip([""] + lines, lines):
         starts_item = re.match(r"^\s*(제\d+조|[①-⑳]|\d+(의\d+)?\.|[가-하]\.|\[|부\s*칙)", cur)
-        if out and len(prev) >= 40 and not starts_item:
+        if paged and out and len(prev) >= 40 and not starts_item:
             out += cur.strip()  # 줄 길이가 꽉 찬 상태로 끊겼다면 이어 붙인다
         else:
             out += ("\n" if out else "") + cur.strip()
@@ -794,7 +827,7 @@ def ask(b: Ask, u=Depends(current_user)):
         return {"answer": NOT_FOUND, "sources": [], "also": []}
 
     ctx = "\n".join(f'<source id="{i}" doc="{v["title"]}" version="v{v["version"]}" article="{ch["label"]}">\n'
-                    f'{for_model(ch["text"])[:CHUNK_CHARS]}\n</source>' for i, (s, v, ch) in enumerate(hits, 1))
+                    f'{for_model(ch["text"], is_paged(v))[:CHUNK_CHARS]}\n</source>' for i, (s, v, ch) in enumerate(hits, 1))
     try:
         raw = llm(f"{ctx}\n\n질문: {q}")
     except Exception as e:
@@ -802,8 +835,9 @@ def ask(b: Ask, u=Depends(current_user)):
         raise err(502, "답변을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
     data = parse_json(raw) or {}
     answer = data.get("answer") or raw.strip() or NOT_FOUND
-    answer = re.sub(r"</?source[^>]*>|</?citations>|\(?citations?:[^)]*\)?|\(source id:[^)]*\)|\s*\bcitations\s*$|\s*\[\d+\]",
-                    "", answer).strip()
+    # 답변 본문에 섞여 나온 내부 표시 정리: <source …>, (source id="1"), (citations: …), [1] 등
+    answer = re.sub(r"</?source[^>]*>|</?citations>|\(?citations?:[^)]*\)?|\s*\(\s*(?:source\s*id\s*[:=][^)]*)\)"
+                    r"|\s*\bcitations\s*$|\s*\[\d+\]", "", answer).strip()
 
     sources, cited = [], set()
     for ct in data.get("citations", []) or []:
@@ -816,7 +850,7 @@ def ask(b: Ask, u=Depends(current_user)):
         quote = str(ct.get("quote", ""))
         found = None
         for j in [i] + [k for k in range(1, len(hits) + 1) if k != i]:
-            found = find_quote(quote, hits[j - 1][2]["text"])
+            found = find_quote(quote, hits[j - 1][2]["text"], is_paged(hits[j - 1][1]))
             if found:
                 i = j
                 break
