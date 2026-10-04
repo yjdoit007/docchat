@@ -65,6 +65,9 @@ CREATE TABLE IF NOT EXISTS pages(version_id INTEGER, page_no INTEGER, text TEXT,
   PRIMARY KEY(version_id, page_no));
 CREATE TABLE IF NOT EXISTS chunks(version_id INTEGER, idx INTEGER, label TEXT,
   page_from INTEGER, page_to INTEGER, text TEXT, PRIMARY KEY(version_id, idx));
+CREATE TABLE IF NOT EXISTS audit(
+  id INTEGER PRIMARY KEY, actor_id INTEGER, action TEXT, target_id INTEGER, detail TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT, updated_by INTEGER, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS logs(
   id INTEGER PRIMARY KEY, user_id INTEGER, question TEXT, as_of TEXT,
   answer TEXT, sources TEXT, created_at TEXT);
@@ -347,6 +350,12 @@ def me(u=Depends(current_user)):
     return {"name": u["name"], "email": u["email"], "role": u["role"]}
 
 
+def audit(c, actor_id, action, target_id=None, detail=""):
+    """관리 작업 기록(승인·거절·관리자 지정/해제·설정 변경). 지우지 않는다."""
+    c.execute("INSERT INTO audit(actor_id,action,target_id,detail,created_at) VALUES(?,?,?,?,?)",
+              (actor_id, action, target_id, detail, now()))
+
+
 # ---------- 관리자: 가입 승인 ----------
 @app.get("/api/admin/users")
 def admin_users(status: str = "pending", admin=Depends(require_admin)):
@@ -365,6 +374,8 @@ def decide(uid: int, action: str, admin=Depends(require_admin)):
         r = c.execute("UPDATE users SET status=?, tv=tv+1 WHERE id=? AND role!='admin' "
                       "AND status IN ('pending','approved','rejected')", (new, uid))
         u = c.execute("SELECT name,email FROM users WHERE id=?", (uid,)).fetchone()
+        if r.rowcount:
+            audit(c, admin["id"], action, uid)
     if r.rowcount == 0 or not u:
         raise err(404, "대상을 찾을 수 없어요.")
     if new == "approved":
@@ -376,6 +387,80 @@ def decide(uid: int, action: str, admin=Depends(require_admin)):
 
 
 # ---------- 문서 / 버전 ----------
+# ---------- 관리자: 사용자·관리자 지정 ----------
+class RoleBody(BaseModel):
+    role: str
+
+
+@app.get("/api/admin/members")
+def members(admin=Depends(require_admin)):
+    """승인된 사용자 전체(관리자 포함)와, 관리자라면 마지막으로 누가 지정했는지."""
+    with db() as c:
+        rows = c.execute("SELECT id,name,email,role,created_at FROM users WHERE status='approved' "
+                         "ORDER BY role='admin' DESC, name").fetchall()
+        out = []
+        for r in rows:
+            g = c.execute("SELECT u.name, a.created_at FROM audit a LEFT JOIN users u ON u.id=a.actor_id "
+                          "WHERE a.action='grant_admin' AND a.target_id=? ORDER BY a.id DESC LIMIT 1", (r["id"],)).fetchone()
+            out.append(dict(r) | {"granted_by": g["name"] if g else None, "granted_at": g["created_at"] if g else None})
+    return out
+
+
+@app.post("/api/admin/members/{uid}/role")
+def set_role(uid: int, b: RoleBody, admin=Depends(require_admin)):
+    if b.role not in ("admin", "viewer"):
+        raise err(400, "역할은 admin 또는 viewer 만 쓸 수 있어요.")
+    with db() as c:
+        u = c.execute("SELECT id,name,role,status FROM users WHERE id=?", (uid,)).fetchone()
+        if not u or u["status"] != "approved":
+            raise err(404, "승인된 사용자만 관리자로 지정하거나 해제할 수 있어요.")
+        if u["role"] == b.role:
+            return {"ok": True, "role": b.role}
+        if b.role == "viewer":
+            n = c.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND status='approved'").fetchone()[0]
+            if n <= 1:
+                raise err(409, "마지막 관리자는 해제할 수 없어요. 다른 사람을 먼저 관리자로 지정해 주세요.")
+        c.execute("UPDATE users SET role=? WHERE id=?", (b.role, uid))
+        audit(c, admin["id"], "grant_admin" if b.role == "admin" else "revoke_admin", uid)
+    return {"ok": True, "role": b.role}
+
+
+@app.get("/api/admin/audit")
+def audit_log(limit: int = 100, admin=Depends(require_admin)):
+    with db() as c:
+        rows = c.execute("SELECT a.id, a.action, a.detail, a.created_at, x.name AS actor, x.email AS actor_email, "
+                         "t.name AS target, t.email AS target_email FROM audit a "
+                         "LEFT JOIN users x ON x.id=a.actor_id LEFT JOIN users t ON t.id=a.target_id "
+                         "ORDER BY a.id DESC LIMIT ?", (min(limit, 500),)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ---------- 관리자: 서버 설정 ----------
+class SettingsBody(BaseModel):
+    public_url: str
+
+
+@app.get("/api/admin/settings")
+def get_settings(admin=Depends(require_admin)):
+    with db() as c:
+        r = c.execute("SELECT s.value, s.updated_at, u.name FROM settings s LEFT JOIN users u ON u.id=s.updated_by "
+                      "WHERE s.key='public_url'").fetchone()
+    return {"public_url": r["value"] if r else "", "updated_at": r["updated_at"] if r else None,
+            "updated_by": r["name"] if r else None}
+
+
+@app.put("/api/admin/settings")
+def put_settings(b: SettingsBody, admin=Depends(require_admin)):
+    url = b.public_url.strip().rstrip("/")
+    if not re.fullmatch(r"https?://[^\s/]+(/\S*)?", url):
+        raise err(400, "http:// 또는 https:// 로 시작하는 주소를 입력해 주세요.")
+    with db() as c:
+        c.execute("REPLACE INTO settings(key,value,updated_by,updated_at) VALUES('public_url',?,?,?)",
+                  (url, admin["id"], now()))
+        audit(c, admin["id"], "set_public_url", None, url)
+    return {"ok": True, "public_url": url}
+
+
 @app.post("/api/docs")
 def upload(title: str = Form(...), file: UploadFile = File(...), admin=Depends(require_admin)):
     title = title.strip()
@@ -758,10 +843,14 @@ def ask(b: Ask, u=Depends(current_user)):
 @app.get("/api/admin/logs")
 def logs(limit: int = 50, admin=Depends(require_admin)):
     with db() as c:
-        rows = c.execute("SELECT l.id, u.name, l.question, l.as_of, l.answer, l.sources, l.created_at "
+        rows = c.execute("SELECT l.id, u.name, u.email, l.question, l.as_of, l.answer, l.sources, l.created_at "
                          "FROM logs l JOIN users u ON u.id=l.user_id ORDER BY l.id DESC LIMIT ?",
                          (min(limit, 200),)).fetchall()
-    return [dict(r) | {"sources": json.loads(r["sources"])} for r in rows]
+    out = []
+    for r in rows:
+        src = json.loads(r["sources"] or "[]")
+        out.append(dict(r) | {"sources": src, "verified": any(s.get("quotes") for s in src)})
+    return out
 
 
 # 웹앱 화면(static 폴더)이 있으면 같은 서버에서 제공 → 접속 주소 하나로 해결

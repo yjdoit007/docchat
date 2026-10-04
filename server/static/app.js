@@ -156,8 +156,10 @@
     $("who").setAttribute("aria-label", user.name + " 계정 메뉴");
     $("whoinfo").innerHTML = "<b>" + esc(user.name) + "</b><small>" + esc(user.email) + " · " +
       (user.role === "admin" ? "관리자" : "사용자") + "</small>";
+    $("toadmin").hidden = user.role !== "admin";
+    showChat();
     loadDocs();
-    $("q").focus();
+    if (user.role === "admin") refreshPending();
   }
 
   // ---------- 문서 목록과 기준 버전 ----------
@@ -304,6 +306,173 @@
       el.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }, function (err) { el.querySelector(".sheet").textContent = err.message; });
   }
+
+  // ---------- 관리자 화면 ----------
+  var ACTION = { approve: "가입 승인", reject: "가입 거절", grant_admin: "관리자 지정", revoke_admin: "관리자 해제", set_public_url: "서버 주소 변경" };
+  function day(t) { return t ? t.slice(0, 16) : ""; }
+  function showChat() {
+    $("admin").hidden = true; document.querySelector(".chat").hidden = false;
+    $("q").focus();
+  }
+  function showAdmin() {
+    $("whopop").hidden = true;
+    document.querySelector(".chat").hidden = true; $("admin").hidden = false;
+    openTab(document.querySelector(".tabs [aria-selected=true]").dataset.tab);
+  }
+  $("toadmin").addEventListener("click", showAdmin);
+  $("tochat").addEventListener("click", function () { loadDocs(); showChat(); });
+  document.querySelectorAll(".tabs button").forEach(function (b) {
+    b.addEventListener("click", function () { openTab(b.dataset.tab); });
+  });
+  function openTab(id) {
+    document.querySelectorAll(".tabs button").forEach(function (b) { b.setAttribute("aria-selected", b.dataset.tab === id); });
+    document.querySelectorAll(".adm .tab").forEach(function (t) { t.classList.toggle("on", t.id === id); });
+    ({ "t-docs": loadDocList, "t-join": loadJoin, "t-members": loadMembers, "t-logs": loadLogs, "t-audit": loadAudit, "t-set": loadSettings })[id]();
+  }
+  function fail(el) { return function (err) { el.innerHTML = '<div class="empty">' + esc(err.message) + "</div>"; }; }
+
+  // 문서
+  function loadDocList() {
+    var el = $("doclist");
+    api("GET", "/api/docs").then(function (docs) {
+      DOCS = docs;
+      $("titles").innerHTML = docs.map(function (d) { return '<option value="' + esc(d.title) + '">'; }).join("");
+      el.innerHTML = docs.length ? docs.map(function (d) {
+        var v = d.versions[0];
+        return '<div class="row"><div class="who"><b>' + esc(d.title) + "</b><small>최신 v" + v.version + " · " + day(v.uploaded_at) + " · " + v.page_count + "쪽</small>" +
+          '<div class="vers">' + d.versions.map(function (x) {
+            return '<button type="button" data-pdf="' + x.id + '" title="원본 PDF 열기">v' + x.version + " · " + x.uploaded_at.slice(0, 10) + "</button>";
+          }).join("") + "</div></div></div>";
+      }).join("") : '<div class="empty">등록된 문서가 없어요. 위에서 첫 문서를 올려 주세요.</div>';
+    }, fail(el));
+  }
+  $("upform").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = this, title = $("uptitle").value.trim(), file = $("upfile").files[0], msg = $("upmsg");
+    clearErr(["uptitle", "upfile"]); msg.textContent = ""; msg.className = "note";
+    if (!title) { bad("uptitle", "문서 이름을 입력해 주세요."); return; }
+    if (!file) { bad("upfile", "올릴 PDF 파일을 골라 주세요."); return; }
+    if (!/\.pdf$/i.test(file.name)) { bad("upfile", "지금은 PDF 파일만 올릴 수 있어요."); return; }
+    var fd = new FormData(); fd.append("title", title); fd.append("file", file);
+    busy(f, true); msg.textContent = "올리는 중이에요… 글자를 읽고 조문 단위로 나누는 데 몇 초 걸려요.";
+    fetch("/api/docs", { method: "POST", headers: { Authorization: "Bearer " + token }, body: fd })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.detail || "올리지 못했어요."); return d; }); })
+      .then(function (d) {
+        msg.className = "note ok";
+        msg.textContent = "올렸어요: " + d.document + " v" + d.version + " (" + d.pages + "쪽, 검색 조각 " + d.chunks + "개)";
+        $("upfile").value = ""; loadDocList(); loadDocs();
+      }, function (err) { msg.className = "note bad"; msg.textContent = err.message; })
+      .then(function () { busy(f, false); });
+  });
+
+  // 가입 승인
+  var joinFilter = "pending";
+  document.querySelectorAll("#joinseg button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      joinFilter = b.dataset.f;
+      document.querySelectorAll("#joinseg button").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
+      loadJoin();
+    });
+  });
+  function refreshPending() {
+    api("GET", "/api/admin/users?status=pending").then(function (l) { $("pendcnt").textContent = l.length || ""; }, function () {});
+  }
+  function loadJoin() {
+    var el = $("joinlist");
+    refreshPending();
+    api("GET", "/api/admin/users?status=" + joinFilter).then(function (list) {
+      el.innerHTML = list.length ? list.map(function (u) {
+        var acts = joinFilter === "pending" ? '<button class="a" data-u="' + u.id + '" data-act="approve">승인</button><button data-u="' + u.id + '" data-act="reject">거절</button>'
+          : joinFilter === "rejected" ? '<button data-u="' + u.id + '" data-act="approve">다시 승인</button>'
+          : '<button class="d" data-u="' + u.id + '" data-act="reject">승인 취소</button>';
+        return '<div class="row"><div class="who"><b>' + esc(u.name) + "</b><small>" + esc(u.email) + " · 가입 " + day(u.created_at) + "</small></div>" +
+          '<div class="acts">' + acts + "</div></div>";
+      }).join("") : '<div class="empty">' + (joinFilter === "pending" ? "대기 중인 요청이 없어요." : "해당하는 사람이 없어요.") + "</div>";
+      el.querySelectorAll("[data-act]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          if (b.dataset.act === "reject" && joinFilter === "approved" && !confirm("승인을 취소하면 이 사람은 더 이상 로그인할 수 없어요. 계속할까요?")) return;
+          b.disabled = true;
+          api("POST", "/api/admin/users/" + b.dataset.u + "/" + b.dataset.act).then(loadJoin, function (err) { alert(err.message); b.disabled = false; });
+        });
+      });
+    }, fail(el));
+  }
+
+  // 사용자·관리자
+  function loadMembers() {
+    var el = $("memberlist");
+    api("GET", "/api/admin/members").then(function (list) {
+      var admins = list.filter(function (u) { return u.role === "admin"; }).length;
+      el.innerHTML = list.map(function (u) {
+        var isAdmin = u.role === "admin", self = me && u.email === me.email;
+        var info = esc(u.email) + " · 가입 " + day(u.created_at) +
+          (isAdmin ? (u.granted_by ? " · " + esc(u.granted_by) + "님이 " + day(u.granted_at) + "에 지정" : " · 처음 설정된 관리자") : "");
+        var btn = isAdmin
+          ? '<button class="d" data-u="' + u.id + '" data-name="' + esc(u.name) + '" data-self="' + (self ? 1 : "") + '" data-role="viewer"' + (admins <= 1 ? ' disabled title="마지막 관리자는 해제할 수 없어요"' : "") + ">관리자 해제</button>"
+          : '<button data-u="' + u.id + '" data-name="' + esc(u.name) + '" data-role="admin">관리자로 지정</button>';
+        return '<div class="row"><div class="who"><b>' + esc(u.name) + (self ? " (나)" : "") + ' <span class="tag ' + (isAdmin ? 'am">관리자' : 'ok">사용자') + "</span></b><small>" + info + "</small></div>" +
+          '<div class="acts">' + btn + "</div></div>";
+      }).join("") || '<div class="empty">승인된 사용자가 없어요.</div>';
+      el.querySelectorAll("[data-role]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var name = b.dataset.name;
+          var toAdmin = b.dataset.role === "admin";
+          var self = !!b.dataset.self;
+          var q = toAdmin ? name + "님을 관리자로 지정할까요? 문서 업로드, 가입 승인, 질문 기록 보기 등 모든 관리 기능을 쓸 수 있게 돼요."
+            : self ? "내 관리자 권한을 해제할까요? 해제하면 이 화면을 더 이상 쓸 수 없어요." : name + "님의 관리자 권한을 해제할까요?";
+          if (!confirm(q)) return;
+          b.disabled = true;
+          api("POST", "/api/admin/members/" + b.dataset.u + "/role", { role: b.dataset.role }).then(function () {
+            if (self && !toAdmin) { me.role = "viewer"; $("toadmin").hidden = true; showChat(); return; }
+            loadMembers();
+          }, function (err) { alert(err.message); b.disabled = false; });
+        });
+      });
+    }, fail(el));
+  }
+
+  // 질문 기록
+  function loadLogs() {
+    var el = $("loglist");
+    api("GET", "/api/admin/logs?limit=200").then(function (list) {
+      el.innerHTML = list.length ? list.map(function (l) {
+        var src = (l.sources || []).map(function (s) { return esc(s.doc + " v" + s.version + " " + (s.article || "p." + s.page)) + (s.quotes && s.quotes.length ? "" : " (인용 미확인)"); }).join("<br>");
+        return '<div class="log"><div class="meta"><span>' + day(l.created_at) + "</span><span>" + esc(l.name) + "</span>" +
+          (l.as_of ? "<span>" + esc(l.as_of) + " 기준</span>" : "") +
+          '<span class="tag ' + (l.verified ? 'ok">인용 확인' : 'no">인용 없음') + "</span></div>" +
+          '<div class="q">' + esc(l.question) + "</div>" +
+          "<details><summary>답변과 출처 보기</summary><p>" + esc(l.answer) + "</p><p>" + (src || "출처 없음") + "</p></details></div>";
+      }).join("") : '<div class="empty">아직 질문 기록이 없어요.</div>';
+    }, fail(el));
+  }
+
+  // 작업 기록
+  function loadAudit() {
+    var el = $("auditlist");
+    api("GET", "/api/admin/audit").then(function (list) {
+      el.innerHTML = list.length ? list.map(function (a) {
+        return '<div class="log"><div class="meta"><span>' + day(a.created_at) + "</span><span>" + esc(a.actor || "?") + "</span></div>" +
+          '<div class="q">' + esc(ACTION[a.action] || a.action) + (a.target ? " · " + esc(a.target) + " (" + esc(a.target_email) + ")" : "") + (a.detail ? " · " + esc(a.detail) : "") + "</div></div>";
+      }).join("") : '<div class="empty">아직 기록이 없어요.</div>';
+    }, fail(el));
+  }
+
+  // 서버 설정
+  function loadSettings() {
+    api("GET", "/api/admin/settings").then(function (s) {
+      $("pubu").value = s.public_url || location.origin;
+      $("pubinfo").textContent = s.updated_at ? "마지막 변경: " + day(s.updated_at) + " · " + (s.updated_by || "") : "아직 저장한 적 없어요. 지금 보이는 값은 이 화면을 연 주소예요.";
+    }, function (err) { $("pubinfo").textContent = err.message; });
+  }
+  $("t-set").addEventListener("submit", function (e) {
+    e.preventDefault();
+    clearErr(["pubu"]);
+    var v = $("pubu").value.trim();
+    if (!/^https?:\/\/\S+$/.test(v)) { bad("pubu", "http:// 또는 https:// 로 시작하는 주소를 입력해 주세요."); return; }
+    api("PUT", "/api/admin/settings", { public_url: v }).then(function () {
+      loadSettings(); $("pubinfo").textContent = "저장했어요. 팀원에게 새 주소를 알려 주세요.";
+    }, function (err) { bad("pubu", err.message); });
+  });
 
   // ---------- 시작 ----------
   if (token) {

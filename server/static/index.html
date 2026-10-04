@@ -96,6 +96,7 @@
    <button class="menu" id="who" type="button" aria-haspopup="true" aria-expanded="false"></button>
    <div class="pop" id="whopop" hidden>
     <div class="pop-who" id="whoinfo"></div>
+    <button type="button" id="toadmin" hidden>관리자 화면</button>
     <button type="button" id="logout">로그아웃</button>
    </div>
   </header>
@@ -107,6 +108,83 @@
    <input id="q" aria-label="질문 입력" placeholder="문서에 대해 물어보세요" autocomplete="off" maxlength="1000">
    <button class="send" type="submit">보내기</button>
   </form>
+ </section>
+
+ <!-- ===== 관리자 화면 ===== -->
+ <section class="adm" id="admin" aria-label="관리자 화면" hidden>
+  <header>
+   <button type="button" class="back" id="tochat">← 대화로</button>
+   <b>관리자</b>
+   <div class="theme" role="group" aria-label="화면 테마"><button data-theme="light" aria-pressed="true">백</button><button data-theme="dark" aria-pressed="false">흑</button></div>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="관리 메뉴">
+   <button role="tab" data-tab="t-docs" aria-selected="true">문서</button>
+   <button role="tab" data-tab="t-join" aria-selected="false">가입 승인 <span class="cnt" id="pendcnt"></span></button>
+   <button role="tab" data-tab="t-members" aria-selected="false">사용자·관리자</button>
+   <button role="tab" data-tab="t-logs" aria-selected="false">질문 기록</button>
+   <button role="tab" data-tab="t-audit" aria-selected="false">작업 기록</button>
+   <button role="tab" data-tab="t-set" aria-selected="false">서버 설정</button>
+  </nav>
+  <div class="adm-body">
+   <!-- 문서 -->
+   <div class="tab on" id="t-docs" role="tabpanel">
+    <form class="card" id="upform" novalidate>
+     <h2>문서 올리기</h2>
+     <p class="sub">같은 이름으로 올리면 새 버전(v2, v3 …)으로 쌓여요. 이전 버전은 지워지지 않아요. 지금은 PDF만 올릴 수 있어요.</p>
+     <label for="uptitle">문서 이름</label>
+     <input id="uptitle" list="titles" placeholder="예: 풍수해ㆍ지진재해보험법" autocomplete="off"><datalist id="titles"></datalist>
+     <div class="hint">기존 문서의 새 버전이면 목록에서 같은 이름을 고르세요.</div><div class="err" id="uptitle-e"></div>
+     <label for="upfile">PDF 파일</label>
+     <input id="upfile" type="file" accept="application/pdf,.pdf"><div class="err" id="upfile-e"></div>
+     <div id="upmsg" class="note" role="status"></div>
+     <button class="pri" type="submit">올리기</button>
+    </form>
+    <div class="card">
+     <h2>등록된 문서</h2>
+     <div id="doclist"></div>
+    </div>
+   </div>
+   <!-- 가입 승인 -->
+   <div class="tab" id="t-join" role="tabpanel">
+    <div class="card">
+     <h2>가입 승인</h2><p class="sub">이메일 인증을 마친 요청만 여기에 나와요.</p>
+     <div class="seg" id="joinseg"><button type="button" data-f="pending" aria-pressed="true">대기</button><button type="button" data-f="approved" aria-pressed="false">승인됨</button><button type="button" data-f="rejected" aria-pressed="false">거절됨</button></div>
+     <div id="joinlist"></div>
+    </div>
+   </div>
+   <!-- 사용자·관리자 -->
+   <div class="tab" id="t-members" role="tabpanel">
+    <div class="card">
+     <h2>사용자·관리자</h2>
+     <p class="sub">승인된 사용자를 관리자로 지정하거나 해제해요. 관리자는 여러 명 둘 수 있고, 마지막 관리자는 해제할 수 없어요. 지정·해제는 작업 기록에 남아요.</p>
+     <div id="memberlist"></div>
+    </div>
+   </div>
+   <!-- 질문 기록 -->
+   <div class="tab" id="t-logs" role="tabpanel">
+    <div class="card">
+     <h2>질문 기록</h2><p class="sub">누가 언제 무엇을 물었고, 어떤 답과 출처가 나갔는지 최근 순으로 보여 줘요(최대 200건). 기록은 지우지 않아요.</p>
+     <div id="loglist"></div>
+    </div>
+   </div>
+   <!-- 작업 기록 -->
+   <div class="tab" id="t-audit" role="tabpanel">
+    <div class="card">
+     <h2>작업 기록</h2><p class="sub">가입 승인·거절, 관리자 지정·해제, 서버 설정 변경 기록이에요.</p>
+     <div id="auditlist"></div>
+    </div>
+   </div>
+   <!-- 서버 설정 -->
+   <form class="tab" id="t-set" role="tabpanel" novalidate>
+    <div class="card">
+     <h2>서버 설정 <span class="tag ok">관리자만 보여요</span></h2>
+     <p class="sub">팀원이 접속하는 주소예요. 도메인으로 바꾸면 여기서 수정하세요.</p>
+     <label for="pubu">서버 주소</label><input id="pubu" inputmode="url" placeholder="https://docchat.example.com">
+     <div class="err" id="pubu-e"></div><div class="hint" id="pubinfo"></div>
+     <button class="pri narrow" type="submit">저장</button>
+    </div>
+   </form>
+  </div>
  </section>
 </div>
 
