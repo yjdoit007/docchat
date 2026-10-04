@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
 
-import fitz  # PyMuPDF
+import pymupdf as fitz  # PyMuPDF
 import jwt
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -31,10 +31,10 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT") or "300")
 # 질문 하나에 모델에게 보내는 근거 페이지 수와 페이지당 글자 수 (로컬 모델은 적게 보내야 빠름)
-TOP_K = int(os.getenv("TOP_K", "3" if LLM_PROVIDER == "ollama" else "6"))
-PAGE_CHARS = int(os.getenv("PAGE_CHARS", "2500" if LLM_PROVIDER == "ollama" else "4000"))
+TOP_K = int(os.getenv("TOP_K") or ("3" if LLM_PROVIDER == "ollama" else "6"))
+PAGE_CHARS = int(os.getenv("PAGE_CHARS") or ("2500" if LLM_PROVIDER == "ollama" else "4000"))
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
