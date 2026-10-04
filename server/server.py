@@ -3,7 +3,7 @@
 - PDF 업로드, 날짜별·버전별 보관, 페이지 단위 검색
 - 질문하면 근거 페이지와 원문 인용을 함께 답변
 """
-import hashlib, hmac, json, math, os, re, secrets, smtplib, sqlite3, time, urllib.request
+import hashlib, hmac, json, math, os, re, secrets, smtplib, sqlite3, time, urllib.error, urllib.request
 from collections import Counter, defaultdict
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
@@ -32,9 +32,9 @@ MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT") or "300")
-# 질문 하나에 모델에게 보내는 근거 페이지 수와 페이지당 글자 수 (로컬 모델은 적게 보내야 빠름)
-TOP_K = int(os.getenv("TOP_K") or ("3" if LLM_PROVIDER == "ollama" else "6"))
-PAGE_CHARS = int(os.getenv("PAGE_CHARS") or ("2500" if LLM_PROVIDER == "ollama" else "4000"))
+# 질문 하나에 모델에게 보내는 근거 조각(조문) 수와 조각당 글자 수 (로컬 모델은 적게 보내야 빠름)
+TOP_K = int(os.getenv("TOP_K") or ("4" if LLM_PROVIDER == "ollama" else "8"))
+CHUNK_CHARS = int(os.getenv("CHUNK_CHARS") or ("1500" if LLM_PROVIDER == "ollama" else "4000"))
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS versions(
   uploaded_at TEXT, uploaded_by INTEGER, sha256 TEXT, page_count INTEGER);
 CREATE TABLE IF NOT EXISTS pages(version_id INTEGER, page_no INTEGER, text TEXT,
   PRIMARY KEY(version_id, page_no));
+CREATE TABLE IF NOT EXISTS chunks(version_id INTEGER, idx INTEGER, label TEXT,
+  page_from INTEGER, page_to INTEGER, text TEXT, PRIMARY KEY(version_id, idx));
 CREATE TABLE IF NOT EXISTS logs(
   id INTEGER PRIMARY KEY, user_id INTEGER, question TEXT, as_of TEXT,
   answer TEXT, sources TEXT, created_at TEXT);
@@ -103,6 +105,10 @@ def init():
     FILES.mkdir(parents=True, exist_ok=True)
     with db() as c:
         c.executescript(SCHEMA)
+        # 조문 조각이 없는 기존 버전은 저장된 페이지 텍스트로 조각을 만든다
+        for (vid,) in c.execute("SELECT id FROM versions WHERE id NOT IN (SELECT DISTINCT version_id FROM chunks)").fetchall():
+            texts = [r["text"] for r in c.execute("SELECT text FROM pages WHERE version_id=? ORDER BY page_no", (vid,))]
+            save_chunks(c, vid, texts)
         if ADMIN_EMAIL and ADMIN_PASSWORD and not c.execute(
                 "SELECT 1 FROM users WHERE email=?", (ADMIN_EMAIL,)).fetchone():
             c.execute("INSERT INTO users(name,email,pw_hash,role,status,created_at) VALUES(?,?,?,?,?,?)",
@@ -404,9 +410,10 @@ def upload(title: str = Form(...), file: UploadFile = File(...), admin=Depends(r
                         "VALUES(?,?,?,?,?,?,?)",
                         (doc_id, ver, file.filename, now(), admin["id"], sha, len(texts))).lastrowid
         c.executemany("INSERT INTO pages VALUES(?,?,?)", [(vid, i + 1, t) for i, t in enumerate(texts)])
+        n_chunks = save_chunks(c, vid, texts)
     (FILES / str(doc_id)).mkdir(parents=True, exist_ok=True)
     (FILES / str(doc_id) / f"v{ver}.pdf").write_bytes(data)
-    return {"document": title, "version": ver, "version_id": vid, "pages": len(texts)}
+    return {"document": title, "version": ver, "version_id": vid, "pages": len(texts), "chunks": n_chunks}
 
 
 @app.get("/api/docs")
@@ -442,7 +449,62 @@ def get_file(vid: int, u=Depends(current_user)):
     return FileResponse(p, media_type="application/pdf", filename=r["filename"])
 
 
-# ---------- 검색 (페이지 단위, 2글자 조각 기반 BM25) ----------
+# ---------- 조문 단위 조각 ----------
+ART_RE = re.compile(r"^제(\d+)조(?:의(\d+))?\s*\(([^)]{1,40})\)")
+BUCHIK_RE = re.compile(r"^부\s*칙\s*(<|$)")
+
+
+def strip_running_lines(texts):
+    """모든 페이지 위·아래에 반복되는 머리글/바닥글(예: '법제처 1 국가법령정보센터')을 지운다."""
+    if len(texts) < 2:
+        return texts
+    key = lambda s: re.sub(r"[\d\s]+", "", s)
+    pages = [t.splitlines() for t in texts]
+    edge = Counter(k for ls in pages for k in {key(l) for l in ls[:3] + ls[-2:] if key(l)})
+    rep = {k for k, n in edge.items() if n >= max(2, len(pages) * 0.6)}
+    return ["\n".join(l for i, l in enumerate(ls) if not ((i < 3 or i >= len(ls) - 2) and key(l) in rep))
+            for ls in pages]
+
+
+def make_chunks(texts):
+    """페이지 텍스트를 조문(제N조) 단위로 나눈다. 조문이 없는 문서는 페이지 단위로 둔다.
+    반환: [(label, page_from, page_to, text)]"""
+    pages = strip_running_lines(texts)
+    chunks, cur, prefix, last = [], None, "", -1
+    for pno, page in enumerate(pages, 1):
+        for line in page.splitlines():
+            s = line.strip()
+            m = ART_RE.match(s)
+            num = m and int(m.group(1)) * 1000 + int(m.group(2) or 0)
+            if BUCHIK_RE.match(s):
+                prefix, last = "부칙 ", -1
+                cur = ["부칙", pno, pno, []]
+                chunks.append(cur)
+            elif m and num > last:  # 본문 속 '제3조(...)' 인용과 구분하려고 번호가 늘어날 때만 새 조문
+                last = num
+                label = f"{prefix}제{m.group(1)}조" + (f"의{m.group(2)}" if m.group(2) else "") + f"({m.group(3)})"
+                cur = [label, pno, pno, []]
+                chunks.append(cur)
+            elif cur is None:
+                cur = ["머리말", pno, pno, []]
+                chunks.append(cur)
+            cur[2] = pno
+            cur[3].append(line)
+    out = [(lb, pf, pt, "\n".join(ls).strip()) for lb, pf, pt, ls in chunks]
+    out = [x for x in out if x[3]]
+    if sum(1 for x in out if ART_RE.match(x[0].removeprefix("부칙 "))) < 2:  # 조문 구조가 아니면 페이지 단위
+        return [(f"p.{i}", i, i, t.strip()) for i, t in enumerate(pages, 1) if t.strip()]
+    return out
+
+
+def save_chunks(c, vid, texts):
+    rows = make_chunks(texts)
+    c.executemany("INSERT INTO chunks VALUES(?,?,?,?,?,?)",
+                  [(vid, i, lb, pf, pt, t) for i, (lb, pf, pt, t) in enumerate(rows)])
+    return len(rows)
+
+
+# ---------- 검색 (조문 단위, 2글자 조각 기반 BM25) ----------
 def grams(text):
     out = []
     for t in re.findall(r"[0-9a-z가-힣]+", text.lower()):
@@ -457,10 +519,11 @@ def grams(text):
 _IDX = {}
 
 
-def page_index(c, vid):
+def chunk_index(c, vid):
     if vid not in _IDX:
-        rows = c.execute("SELECT page_no, text FROM pages WHERE version_id=?", (vid,)).fetchall()
-        _IDX[vid] = [(r["page_no"], r["text"], Counter(grams(r["text"]))) for r in rows]
+        rows = c.execute("SELECT label, page_from, page_to, text FROM chunks WHERE version_id=? ORDER BY idx",
+                         (vid,)).fetchall()
+        _IDX[vid] = [(dict(r), Counter(grams(r["label"] + " " + r["text"])), set(grams(r["label"]))) for r in rows]
     return _IDX[vid]
 
 
@@ -477,24 +540,27 @@ def pick_versions(c, as_of):
 
 
 def search(c, vers, q, k=6):
-    pages = [(v, no, text, cnt) for v in vers for no, text, cnt in page_index(c, v["id"])]
+    """관련도 높은 조각 k개: [(점수, 버전, 조각)] — 조각은 label/page_from/page_to/text"""
+    items = [(v, ch, cnt, lab) for v in vers for ch, cnt, lab in chunk_index(c, v["id"])]
     qg = set(grams(q))
-    if not pages or not qg:
+    if not items or not qg:
         return []
-    N = len(pages)
-    lens = [sum(p[3].values()) for p in pages]
+    N = len(items)
+    lens = [sum(x[2].values()) for x in items]
     avg = (sum(lens) / N) or 1
-    df = {g: sum(1 for p in pages if g in p[3]) for g in qg}
+    df = {g: sum(1 for x in items if g in x[2]) for g in qg}
     out = []
-    for (v, no, text, cnt), L in zip(pages, lens):
+    for (v, ch, cnt, lab), L in zip(items, lens):
         s = 0.0
         for g in qg:
             tf = cnt.get(g, 0)
             if tf:
                 idf = math.log(1 + (N - df[g] + .5) / (df[g] + .5))
                 s += idf * tf * 2.5 / (tf + 1.5 * (.25 + .75 * L / avg))
+                if g in lab:  # 조문 제목(예: '제6조(보험사업자)')에 질문 단어가 있으면 가산
+                    s += idf * 1.5
         if s > 0:
-            out.append((s, v, no, text))
+            out.append((s, v, ch))
     out.sort(key=lambda x: -x[0])
     return out[:k]
 
@@ -504,8 +570,18 @@ SYSTEM = """당신은 사내 문서 도우미입니다. 아래 <source> 안의 �
 규칙:
 - 소스에 없는 내용은 추측하지 마세요. 근거가 부족하면 answer에 "제공된 문서에서 근거를 찾지 못했어요."라고 쓰고 citations는 비워 두세요.
 - 답변에 사용한 근거마다 소스 id와 소스 본문에 있는 문장을 한 글자도 바꾸지 말고 quote에 복사하세요(120자 이내).
+- answer에는 설명만 쓰고, 인용문이나 소스 번호는 넣지 마세요. 인용은 citations에만 넣으세요.
 - 법적 판단이 필요한 내용은 문서에 적힌 대로만 전달하고, 단정하기 어렵다면 그렇게 말하세요.
 - 반드시 JSON만 출력하세요: {"answer": "...", "citations": [{"id": 1, "quote": "..."}]}"""
+ANSWER_SCHEMA = {
+    "type": "object", "required": ["answer", "citations"],
+    "properties": {
+        "answer": {"type": "string"},
+        "citations": {"type": "array", "items": {
+            "type": "object", "required": ["id", "quote"],
+            "properties": {"id": {"type": "integer"}, "quote": {"type": "string"}}}},
+    },
+}
 NOT_FOUND = "제공된 문서에서 근거를 찾지 못했어요. 질문을 조금 다르게 써 보시거나 문서가 등록되어 있는지 확인해 주세요."
 
 
@@ -525,6 +601,56 @@ def norm(s):
     return re.sub(r"\s+", "", s)
 
 
+# 개정 표시: <개정 2024. 2. 13.>, <신설 ...>, [전문개정 ...], [제목개정 ...], [본조신설 ...] 등
+NOTE_RE = re.compile(r"<(?:개정|신설|삭제|타법개정)[^>]*>|\[(?:전문개정|제목개정|본조신설|종전[^\]]*|[^\]]*이동)[^\]]*\]")
+# 인용 대조 때 무시하는 문자(공백·따옴표·괄호 모양)와 같은 글자로 보는 문자(가운뎃점)
+_SKIP = set(" \t\r\n 「」『』«»<>“”\"'‘’")
+_FOLD = {"·": "ㆍ", "・": "ㆍ", "∙": "ㆍ", "‧": "ㆍ"}
+
+
+def _fold(text):
+    """대조용 글자열과, 각 글자가 원문 어디에서 왔는지(index)를 함께 돌려준다."""
+    skip = [False] * len(text)
+    for m in NOTE_RE.finditer(text):
+        skip[m.start():m.end()] = [True] * (m.end() - m.start())
+    out, pos = [], []
+    for i, ch in enumerate(text):
+        if skip[i] or ch in _SKIP:
+            continue
+        out.append(_FOLD.get(ch, ch))
+        pos.append(i)
+    return "".join(out), pos
+
+
+def find_quote(quote, text):
+    """모델이 적은 인용을 원문에서 찾아 **원문 그대로의 구간**을 돌려준다. 없으면 None.
+    띄어쓰기·따옴표/괄호 모양·가운뎃점·개정 표시 차이만 허용한다."""
+    q, _ = _fold(quote)
+    if len(q) < 8:  # 너무 짧은 인용은 증빙으로 쓰지 않음
+        return None
+    t, pos = _fold(text)
+    i = t.find(q)
+    if i < 0:
+        return None
+    span = text[pos[i]:pos[i + len(q) - 1] + 1]
+    span = re.sub(r"(?<=[가-힣])[ \t]*\n[ \t]*(?=[가-힣])", "", span)  # PDF 줄바꿈으로 끊긴 낱말 잇기
+    return re.sub(r"\s+", " ", span).strip()
+
+
+def for_model(text):
+    """모델에게 보낼 원문 정리: 개정 표시를 빼고, PDF에서 글자 수 때문에 끊긴 줄을 잇는다."""
+    text = NOTE_RE.sub("", text)
+    lines = [l.rstrip() for l in text.splitlines() if l.strip()]
+    out = ""
+    for prev, cur in zip([""] + lines, lines):
+        starts_item = re.match(r"^\s*(제\d+조|[①-⑳]|\d+(의\d+)?\.|[가-하]\.|\[|부\s*칙)", cur)
+        if out and len(prev) >= 40 and not starts_item:
+            out += cur.strip()  # 줄 길이가 꽉 찬 상태로 끊겼다면 이어 붙인다
+        else:
+            out += ("\n" if out else "") + cur.strip()
+    return out
+
+
 def llm(prompt):
     """SYSTEM 규칙과 질문을 모델에 보내고 응답 글자를 돌려준다. LLM_PROVIDER로 모델을 고른다."""
     if LLM_PROVIDER == "claude":
@@ -534,15 +660,22 @@ def llm(prompt):
             messages=[{"role": "user", "content": prompt}])
         return "".join(x.text for x in msg.content if x.type == "text")
     if LLM_PROVIDER == "ollama":
-        body = json.dumps({
-            "model": OLLAMA_MODEL, "stream": False, "format": "json",
-            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
-            "options": {"temperature": 0, "num_ctx": 8192},
-        }).encode()
-        req = urllib.request.Request(f"{OLLAMA_URL}/api/chat", data=body,
-                                     headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as r:
-            return json.loads(r.read())["message"]["content"]
+        # 1차: 답변 형식(스키마)을 강제해 citations를 빠뜨리지 않게 한다.
+        # 2차: 로컬 모델이 가끔 생성 도중 실패(500)하므로 형식 지정 없이 다시 시도한다(parse_json이 처리).
+        for fmt in (ANSWER_SCHEMA, None):
+            body = {"model": OLLAMA_MODEL, "stream": False, "options": {"temperature": 0, "num_ctx": 8192},
+                    "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}]}
+            if fmt:
+                body["format"] = fmt
+            req = urllib.request.Request(f"{OLLAMA_URL}/api/chat", data=json.dumps(body).encode(),
+                                         headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as r:
+                    return json.loads(r.read())["message"]["content"]
+            except urllib.error.HTTPError as e:
+                if fmt is None or e.code < 500:
+                    raise
+                print("Ollama 오류, 형식 지정 없이 다시 시도:", e)
     raise ValueError(f"알 수 없는 LLM_PROVIDER: {LLM_PROVIDER} (ollama 또는 claude)")
 
 
@@ -561,8 +694,8 @@ def ask(b: Ask, u=Depends(current_user)):
     if not hits:
         return {"answer": NOT_FOUND, "sources": [], "also": []}
 
-    ctx = "\n".join(f'<source id="{i}" doc="{v["title"]}" version="v{v["version"]}" page="{no}">\n'
-                    f'{text.strip()[:PAGE_CHARS]}\n</source>' for i, (s, v, no, text) in enumerate(hits, 1))
+    ctx = "\n".join(f'<source id="{i}" doc="{v["title"]}" version="v{v["version"]}" article="{ch["label"]}">\n'
+                    f'{for_model(ch["text"])[:CHUNK_CHARS]}\n</source>' for i, (s, v, ch) in enumerate(hits, 1))
     try:
         raw = llm(f"{ctx}\n\n질문: {q}")
     except Exception as e:
@@ -570,30 +703,42 @@ def ask(b: Ask, u=Depends(current_user)):
         raise err(502, "답변을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
     data = parse_json(raw) or {}
     answer = data.get("answer") or raw.strip() or NOT_FOUND
+    answer = re.sub(r"</?source[^>]*>|</?citations>|\(?citations?:[^)]*\)?|\(source id:[^)]*\)|\s*\bcitations\s*$|\s*\[\d+\]",
+                    "", answer).strip()
 
     sources, cited = [], set()
     for ct in data.get("citations", []) or []:
         try:
             i = int(ct["id"])
-            s, v, no, text = hits[i - 1]
+            hits[i - 1]
         except (KeyError, ValueError, IndexError, TypeError):
             continue
+        # 인용문이 실제 원문에 있는지 검증. 모델이 번호를 잘못 달았으면 다른 근거 조각에서도 찾아본다.
         quote = str(ct.get("quote", ""))
-        ok = bool(quote) and norm(quote) in norm(text)  # 인용문이 실제 원문에 있는지 검증
+        found = None
+        for j in [i] + [k for k in range(1, len(hits) + 1) if k != i]:
+            found = find_quote(quote, hits[j - 1][2]["text"])
+            if found:
+                i = j
+                break
+        s, v, ch = hits[i - 1]
+        ok, quote = bool(found), found  # 화면에는 원문에서 잘라 온 구간을 그대로 보여 준다
         cited.add(i)
-        ex = next((x for x in sources if x["version_id"] == v["id"] and x["page"] == no), None)
+        ex = next((x for x in sources if x["version_id"] == v["id"] and x["article"] == ch["label"]), None)
         if not ex:
-            ex = {"doc": v["title"], "version": v["version"], "version_id": v["id"],
-                  "uploaded_at": v["uploaded_at"], "page": no, "quotes": []}
+            ex = {"doc": v["title"], "version": v["version"], "version_id": v["id"], "uploaded_at": v["uploaded_at"],
+                  "article": ch["label"], "page": ch["page_from"], "page_to": ch["page_to"], "quotes": []}
             sources.append(ex)
-        if ok:
+        if ok and quote not in ex["quotes"]:
             ex["quotes"].append(quote)
-    also = [{"doc": v["title"], "version": v["version"], "version_id": v["id"], "page": no}
-            for i, (s, v, no, text) in enumerate(hits, 1) if i not in cited][:3]
+    also = [{"doc": v["title"], "version": v["version"], "version_id": v["id"],
+             "article": ch["label"], "page": ch["page_from"]}
+            for i, (s, v, ch) in enumerate(hits, 1) if i not in cited][:3]
     with db() as c:
         c.execute("INSERT INTO logs(user_id,question,as_of,answer,sources,created_at) VALUES(?,?,?,?,?,?)",
                   (u["id"], q, b.as_of, answer, json.dumps(sources, ensure_ascii=False), now()))
-    return {"answer": answer, "sources": sources, "also": also, "as_of": b.as_of}
+    verified = any(s["quotes"] for s in sources)  # 원문과 대조해 확인된 인용이 하나라도 있는지 (화면 표시용)
+    return {"answer": answer, "verified": verified, "sources": sources, "also": also, "as_of": b.as_of}
 
 
 @app.get("/api/admin/logs")

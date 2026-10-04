@@ -17,6 +17,8 @@ QUESTIONS = [
     ("정부가 보험료를 얼마나 지원하나요?", None),
     ("보험사업자는 누가 될 수 있어요?", None),
     ("자동차 사고 렌터카 비용도 보상되나요?", None),  # 문서에 없는 내용 → 거절해야 정상
+    ("보험기간은 얼마예요?", None),
+    ("손해평가인 자격이 정지되는 경우는?", None),
 ]
 
 
@@ -70,14 +72,14 @@ def main():
         t = time.time()
         st, r = call("POST", "/api/ask", token, {"question": q, "as_of": as_of})
         print(f"\n[질문] {q}  ({st}, {time.time() - t:.0f}초)")
-        print(f"  답변: {r.get('answer')}")
+        print(f"  답변{'' if r.get('verified') else ' (확인된 인용 없음)'}: {r.get('answer')}")
         for s in r.get("sources", []):
             mark = "확인된 인용 " + str(len(s["quotes"])) + "개" if s["quotes"] else "확인된 인용 없음"
-            print(f"  출처: {s['doc']} v{s['version']} p.{s['page']} — {mark}")
+            print(f"  출처: {s['doc']} v{s['version']} {s.get('article', '')} p.{s['page']} — {mark}")
             for qt in s["quotes"]:
                 print(f"    「{qt}」")
         for a in r.get("also", []):
-            print(f"  관련: {a['doc']} v{a['version']} p.{a['page']}")
+            print(f"  관련: {a['doc']} v{a['version']} {a.get('article', '')} p.{a['page']}")
 
 
 if __name__ == "__main__":
