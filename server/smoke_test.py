@@ -3,7 +3,7 @@ r"""서버 동작 점검 스크립트 (서버를 켠 상태에서 실행)
     .venv\Scripts\python.exe smoke_test.py --ask-only  # 질문만
 관리자 계정은 .env의 ADMIN_EMAIL / ADMIN_PASSWORD를 사용한다. 시험 문서는 ..\samples\*.pdf
 """
-import json, re, sys, time, urllib.error, urllib.request, uuid
+import json, os, re, sys, time, urllib.error, urllib.request, uuid
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -52,7 +52,12 @@ def title_of(pdf):
 
 def main():
     ask_only = "--ask-only" in sys.argv
-    st, r = call("POST", "/api/auth/login", body={"email": ENV["ADMIN_EMAIL"], "password": ENV["ADMIN_PASSWORD"]})
+    # 질문만 할 때는 일반 사용자로도 된다: 환경변수 SMOKE_EMAIL / SMOKE_PASSWORD 로 계정을 바꿀 수 있다
+    email = os.environ.get("SMOKE_EMAIL") or ENV["ADMIN_EMAIL"]
+    password = os.environ.get("SMOKE_PASSWORD") or ENV["ADMIN_PASSWORD"]
+    st, r = call("POST", "/api/auth/login", body={"email": email, "password": password})
+    if st != 200:
+        sys.exit(f"[로그인 실패] {st} {r.get('detail')} — .env의 관리자 비밀번호를 바꿨다면 SMOKE_EMAIL/SMOKE_PASSWORD를 지정하세요")
     print(f"[로그인] {st} {r.get('user') or r}")
     token = r["token"]
 

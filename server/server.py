@@ -32,9 +32,11 @@ MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT") or "300")
+# 모델을 메모리에 붙잡아 두는 시간. 기본 5분이면 한동안 질문이 없을 때 다음 질문이 모델 불러오기만큼 느려진다
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE") or "60m"
 # 질문 하나에 모델에게 보내는 근거 조각(조문) 수와 조각당 글자 수 (로컬 모델은 적게 보내야 빠름)
-TOP_K = int(os.getenv("TOP_K") or ("4" if LLM_PROVIDER == "ollama" else "8"))
-CHUNK_CHARS = int(os.getenv("CHUNK_CHARS") or ("1500" if LLM_PROVIDER == "ollama" else "4000"))
+TOP_K = int(os.getenv("TOP_K") or ("3" if LLM_PROVIDER == "ollama" else "8"))
+CHUNK_CHARS = int(os.getenv("CHUNK_CHARS") or ("1000" if LLM_PROVIDER == "ollama" else "4000"))
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -722,8 +724,8 @@ def search(c, vers, q, k=6):
 SYSTEM = """당신은 사내 문서 도우미입니다. 아래 <source> 안의 내용만 근거로 한국어(해요체)로 친절하게 답하세요.
 규칙:
 - 소스에 없는 내용은 추측하지 마세요. 근거가 부족하면 answer에 "제공된 문서에서 근거를 찾지 못했어요."라고 쓰고 citations는 비워 두세요.
-- 답변에 사용한 근거마다 소스 id와 소스 본문에 있는 문장을 한 글자도 바꾸지 말고 quote에 복사하세요(120자 이내).
-- answer에는 설명만 쓰고, 인용문이나 소스 번호는 넣지 마세요. 인용은 citations에만 넣으세요.
+- answer는 핵심만 2~3문장으로 짧게 쓰세요. 인용문이나 소스 번호는 answer에 넣지 마세요.
+- citations에는 근거가 된 소스 id와, 소스 본문의 문장을 한 글자도 바꾸지 말고 80자 이내로 복사해 넣으세요(1~2개).
 - 법적 판단이 필요한 내용은 문서에 적힌 대로만 전달하고, 단정하기 어렵다면 그렇게 말하세요.
 - 반드시 JSON만 출력하세요: {"answer": "...", "citations": [{"id": 1, "quote": "..."}]}"""
 ANSWER_SCHEMA = {
@@ -826,7 +828,9 @@ def llm(prompt):
         # 1차: 답변 형식(스키마)을 강제해 citations를 빠뜨리지 않게 한다.
         # 2차: 로컬 모델이 가끔 생성 도중 실패(500)하므로 형식 지정 없이 다시 시도한다(parse_json이 처리).
         for fmt in (ANSWER_SCHEMA, None):
-            body = {"model": OLLAMA_MODEL, "stream": False, "options": {"temperature": 0, "num_ctx": 8192},
+            body = {"model": OLLAMA_MODEL, "stream": False, "keep_alive": OLLAMA_KEEP_ALIVE,
+                    # num_predict: 답 길이 상한(토큰). 짧은 답 + 인용 1~2개면 충분하고, 길게 늘어지는 것을 막는다
+                    "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 450},
                     "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}]}
             if fmt:
                 body["format"] = fmt
