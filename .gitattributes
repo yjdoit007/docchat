@@ -1,0 +1,5 @@
+# 원본 문서는 한 바이트도 바꾸지 않고 보관 (줄바꿈 자동 변환 금지)
+*.pdf  binary
+*.hwp  binary
+*.hwpx binary
+samples/** -text
