@@ -3,7 +3,7 @@
 - PDF 업로드, 날짜별·버전별 보관, 페이지 단위 검색
 - 질문하면 근거 페이지와 원문 인용을 함께 답변
 """
-import hashlib, hmac, json, math, os, re, secrets, smtplib, sqlite3, time
+import hashlib, hmac, json, math, os, re, secrets, smtplib, sqlite3, time, urllib.request
 from collections import Counter, defaultdict
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
@@ -12,7 +12,6 @@ from pathlib import Path
 
 import fitz  # PyMuPDF
 import jwt
-from anthropic import Anthropic
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from dotenv import load_dotenv
@@ -27,7 +26,15 @@ KST = timezone(timedelta(hours=9))
 DATA = Path(os.getenv("DATA_DIR", "data"))
 FILES = DATA / "files"
 DB_PATH = DATA / "docchat.db"
+# 답변을 만드는 모델: ollama(로컬, 무료) 또는 claude(API 키 필요)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
+# 질문 하나에 모델에게 보내는 근거 페이지 수와 페이지당 글자 수 (로컬 모델은 적게 보내야 빠름)
+TOP_K = int(os.getenv("TOP_K", "3" if LLM_PROVIDER == "ollama" else "6"))
+PAGE_CHARS = int(os.getenv("PAGE_CHARS", "2500" if LLM_PROVIDER == "ollama" else "4000"))
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -518,6 +525,27 @@ def norm(s):
     return re.sub(r"\s+", "", s)
 
 
+def llm(prompt):
+    """SYSTEM 규칙과 질문을 모델에 보내고 응답 글자를 돌려준다. LLM_PROVIDER로 모델을 고른다."""
+    if LLM_PROVIDER == "claude":
+        from anthropic import Anthropic  # Claude를 쓸 때만 필요
+        msg = Anthropic().messages.create(
+            model=MODEL, max_tokens=1500, system=SYSTEM,
+            messages=[{"role": "user", "content": prompt}])
+        return "".join(x.text for x in msg.content if x.type == "text")
+    if LLM_PROVIDER == "ollama":
+        body = json.dumps({
+            "model": OLLAMA_MODEL, "stream": False, "format": "json",
+            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}],
+            "options": {"temperature": 0, "num_ctx": 8192},
+        }).encode()
+        req = urllib.request.Request(f"{OLLAMA_URL}/api/chat", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=OLLAMA_TIMEOUT) as r:
+            return json.loads(r.read())["message"]["content"]
+    raise ValueError(f"알 수 없는 LLM_PROVIDER: {LLM_PROVIDER} (ollama 또는 claude)")
+
+
 @app.post("/api/ask")
 def ask(b: Ask, u=Depends(current_user)):
     q = b.question.strip()
@@ -527,21 +555,18 @@ def ask(b: Ask, u=Depends(current_user)):
         raise err(400, "날짜는 2026-03-01 형식으로 입력해 주세요.")
     with db() as c:
         vers = pick_versions(c, b.as_of)
-        hits = search(c, vers, q) if vers else []
+        hits = search(c, vers, q, TOP_K) if vers else []
     if not vers:
         return {"answer": "아직 등록된 문서가 없어요. 관리자가 문서를 올리면 물어볼 수 있어요.", "sources": [], "also": []}
     if not hits:
         return {"answer": NOT_FOUND, "sources": [], "also": []}
 
     ctx = "\n".join(f'<source id="{i}" doc="{v["title"]}" version="v{v["version"]}" page="{no}">\n'
-                    f'{text.strip()[:4000]}\n</source>' for i, (s, v, no, text) in enumerate(hits, 1))
+                    f'{text.strip()[:PAGE_CHARS]}\n</source>' for i, (s, v, no, text) in enumerate(hits, 1))
     try:
-        msg = Anthropic().messages.create(
-            model=MODEL, max_tokens=1500, system=SYSTEM,
-            messages=[{"role": "user", "content": f"{ctx}\n\n질문: {q}"}])
-        raw = "".join(x.text for x in msg.content if x.type == "text")
+        raw = llm(f"{ctx}\n\n질문: {q}")
     except Exception as e:
-        print("Claude 호출 실패:", e)
+        print(f"모델 호출 실패({LLM_PROVIDER}):", e)
         raise err(502, "답변을 만들지 못했어요. 잠시 후 다시 시도해 주세요.")
     data = parse_json(raw) or {}
     answer = data.get("answer") or raw.strip() or NOT_FOUND

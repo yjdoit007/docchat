@@ -11,7 +11,7 @@
                                         ├─ 인증/승인 (관리자·Viewer)
                                         ├─ 문서 업로드·버전 관리
                                         ├─ 페이지 단위 검색
-                                        ├─ Claude API 호출 → 근거 포함 답변
+                                        ├─ LLM 호출(Ollama 로컬 또는 Claude API) → 근거 포함 답변
                                         ├─ SQLite (data/docchat.db)
                                         └─ 원본 PDF (data/files/문서ID/v버전.pdf)
 ```
@@ -20,8 +20,8 @@
 ## 질의응답 흐름 (RAG)
 1. PDF 업로드 → 페이지별 텍스트 추출(PyMuPDF) → 버전과 함께 저장
 2. 질문 → 기준 버전 선택 (기본: 문서별 최신, `as_of` 날짜가 있으면 그 날짜까지 올라온 최신)
-3. 선택된 버전의 페이지 중 관련도 높은 상위 6쪽 검색
-4. 해당 페이지 본문만 Claude에 전달, "소스 밖 추측 금지·인용문 그대로 복사" 규칙으로 JSON 답변 생성
+3. 선택된 버전의 페이지 중 관련도 높은 상위 페이지 검색 (기본: Ollama 3쪽, Claude 6쪽 / `.env`의 TOP_K)
+4. 해당 페이지 본문만 LLM에 전달, "소스 밖 추측 금지·인용문 그대로 복사" 규칙으로 JSON 답변 생성
 5. 서버가 인용문이 실제 원문에 있는지 **검증**, 없으면 인용 표시 제거
 6. 답변 + 출처(문서·버전·페이지·인용) + 관련 페이지 반환, 질문·답변은 로그에 저장
 
@@ -45,7 +45,7 @@
 |---|---|
 | 서버 | Python 3.11+, FastAPI, SQLite |
 | PDF | PyMuPDF (스캔 PDF는 OCR 후 업로드 필요) |
-| LLM | Claude API (모델은 .env의 CLAUDE_MODEL) |
+| LLM | `.env`의 `LLM_PROVIDER`로 전환. 기본 `ollama`(로컬·무료, 모델은 OLLAMA_MODEL, 기본 gemma3:4b) / `claude`(Claude API, 모델은 CLAUDE_MODEL) |
 | 인증 | JWT(12시간), argon2 비밀번호 해시 |
 | 메일 | SMTP (Gmail 앱 비밀번호) — 설정이 없으면 콘솔 출력(테스트용) |
 | 클라이언트 | HTML/JS 웹앱, 웹뷰 호환, 흑/백 테마 |

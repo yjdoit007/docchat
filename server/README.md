@@ -6,9 +6,15 @@ cd docchat-server
 python -m venv .venv
 source .venv/bin/activate        # 윈도우: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env             # 열어서 ADMIN_EMAIL, ADMIN_PASSWORD, ANTHROPIC_API_KEY 입력
+cp .env.example .env             # 열어서 ADMIN_EMAIL, ADMIN_PASSWORD 입력
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
+
+## 답변 모델 고르기 (`.env`의 LLM_PROVIDER)
+- `ollama` (기본, 무료): 이 PC에서 직접 돌리는 로컬 모델. Ollama를 설치하고 `ollama pull gemma3:4b`로 모델을 받아 두세요.
+  그래픽카드가 없는 노트북에서는 답변 하나에 1~3분 걸릴 수 있어요.
+- `claude` (유료): `ANTHROPIC_API_KEY`에 console.anthropic.com에서 발급한 키를 넣으세요. 빠르고 품질이 좋아요.
+- 바꾼 뒤에는 서버를 다시 켜야 적용돼요. 어느 모델이든 인용문은 서버가 원문과 대조해 확인된 것만 내보내요.
 
 ## 먼저 확인해 보기
 브라우저에서 `http://localhost:8000/docs` 를 열면 모든 기능을 화면에서 시험할 수 있어요.

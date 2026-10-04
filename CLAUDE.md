@@ -29,7 +29,8 @@
 - 흑/백 테마 전환. 기기 설정을 따르되 사용자의 선택을 기억한다.
 - 가입: 이름·이메일·비밀번호 → **이메일 인증** → 관리자 승인 → 로그인. 비밀번호 초기화 포함.
 - 서버 주소 설정은 **관리자 화면에서만** 보인다. 로그인 화면에는 없다.
-- 서버: FastAPI + SQLite + PyMuPDF + Claude API. 서버가 `static\` 폴더의 웹앱도 같이 제공한다(접속 주소 하나).
+- 서버: FastAPI + SQLite + PyMuPDF + LLM. 서버가 `static\` 폴더의 웹앱도 같이 제공한다(접속 주소 하나).
+- LLM: 기본은 **로컬 Ollama(무료, gemma3:4b)**. `.env`의 `LLM_PROVIDER=claude`로 Claude API로 바꿀 수 있다. 사용자는 무료 운영을 원한다.
 
 ## 현재 상태 (2026-10-03 기준)
 - 완료: 요구사항·구조·화면 시안·인증 흐름 설계, `server\server.py` 작성.
@@ -42,7 +43,7 @@ cd C:\work\docchat\server
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env        # ADMIN_EMAIL, ADMIN_PASSWORD, ANTHROPIC_API_KEY 입력
+copy .env.example .env        # ADMIN_EMAIL, ADMIN_PASSWORD 입력 (Claude를 쓸 때만 ANTHROPIC_API_KEY)
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 브라우저에서 `http://localhost:8000/docs` 로 API를 시험한다. 메일 설정(SMTP_USER)이 비어 있으면 인증 코드가 콘솔에 출력된다.
