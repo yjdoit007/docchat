@@ -45,8 +45,29 @@
   });
   theme(store.get("docchat-theme") || (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
 
+  // ---------- 핸드폰 키보드 대응 ----------
+  // 키보드가 올라오면 '보이는 높이'(visualViewport)에 맞춰 화면 높이를 줄이고, 페이지가 위로 밀리지 않게 되돌린다.
+  // → 헤더는 맨 위, 입력창은 키보드 바로 위에 그대로 있고 대화 영역만 줄어든다.
+  var vv = window.visualViewport;
+  function fitViewport() {
+    if (!document.documentElement.classList.contains("fixed-app")) return;
+    var h = vv ? vv.height : window.innerHeight;
+    document.documentElement.style.setProperty("--vvh", Math.round(h) + "px");
+    if (window.scrollY || (vv && vv.offsetTop)) window.scrollTo(0, 0);
+  }
+  if (vv) { vv.addEventListener("resize", fitViewport); vv.addEventListener("scroll", fitViewport); }
+  window.addEventListener("resize", fitViewport);
+  function fixedApp(on) {
+    document.documentElement.classList.toggle("fixed-app", on);
+    if (on) fitViewport(); else document.documentElement.style.removeProperty("--vvh");
+  }
+  document.addEventListener("focusin", function (e) {
+    if (e.target.id === "q") setTimeout(function () { fitViewport(); msgs.scrollTop = msgs.scrollHeight; }, 300);
+  });
+
   // ---------- 접속 화면 ----------
   function go(id) {
+    fixedApp(false);
     $("main").hidden = true; $("access").hidden = false;
     document.querySelectorAll(".scr").forEach(function (s) { s.classList.toggle("on", s.id === id); });
     var first = document.querySelector("#" + id + " input");
@@ -152,6 +173,7 @@
   function start(user) {
     me = user;
     $("access").hidden = true; $("main").hidden = false;
+    fixedApp(true);
     $("who").textContent = (user.name || "?").slice(0, 1);
     $("who").setAttribute("aria-label", user.name + " 계정 메뉴");
     $("whoinfo").innerHTML = "<b>" + esc(user.name) + "</b><small>" + esc(user.email) + " · " +

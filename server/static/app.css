@@ -15,6 +15,7 @@ body{background:var(--bg);color:var(--ink);font:15px/1.6 "Noto Sans KR",system-u
  padding:env(safe-area-inset-top,0) 0 env(safe-area-inset-bottom,0)}
 [hidden]{display:none!important}
 button,select,input{font:inherit;color:inherit}
+@media (pointer:coarse){input,select,textarea{font-size:16px!important}}
 :focus-visible{outline:2px solid var(--amb);outline-offset:2px}
 h1{font-size:20px;margin:0 0 6px}
 .mute{color:var(--mute);font-size:13px}
@@ -53,7 +54,11 @@ input[aria-invalid="true"]{border-color:var(--no)}
 .steps .d{border-color:var(--ok);color:var(--ink)}
 
 /* ---------- 대화 화면 ---------- */
-.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr)}
+/* 핸드폰 키보드가 올라와도 헤더가 밀려 올라가지 않게: 페이지는 고정하고,
+   화면 높이를 '키보드를 뺀 보이는 높이'(--vvh, app.js가 계산)에 맞춘다. 가운데 대화 영역만 줄어든다 */
+html.fixed-app,html.fixed-app body{height:100%;overflow:hidden;overscroll-behavior:none}
+html.fixed-app body{position:fixed;inset:0;width:100%}
+.app{height:var(--vvh,100dvh);display:grid;grid-template-columns:minmax(0,1fr)}
 @media(min-width:1000px){.app{grid-template-columns:260px minmax(0,1fr)}}
 .side{display:none;background:var(--side);border-right:1px solid var(--line);padding:14px 10px;overflow-y:auto}
 @media(min-width:1000px){.side{display:block}}
@@ -64,7 +69,7 @@ input[aria-invalid="true"]{border-color:var(--no)}
 .doc:hover{background:var(--sel)}
 .side-empty{color:var(--mute);font-size:13px;padding:4px 10px}
 .chat{display:flex;flex-direction:column;min-height:0;height:100%;background:var(--panel);position:relative}
-header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);flex:none}
 header>b{font-size:16px;white-space:nowrap;flex:none}
 header select{font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:5px 8px;
  flex:0 1 200px;min-width:0;margin-left:auto;text-overflow:ellipsis}
@@ -73,7 +78,7 @@ header select{font-size:13px;background:var(--bg);border:1px solid var(--line);b
 .pop-who{font-size:13px;margin-bottom:10px;overflow-wrap:anywhere}
 .pop-who small{display:block;color:var(--mute)}
 .pop button{width:100%;background:none;border:1px solid var(--line);border-radius:8px;padding:8px;cursor:pointer}
-.msgs{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.msgs{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px;display:flex;flex-direction:column;gap:14px}
 .msgs>*{width:100%;max-width:760px;margin-inline:auto}
 .m{max-width:min(760px,92%);padding:10px 14px;border-radius:16px;overflow-wrap:anywhere}
 .me{align-self:flex-end;width:auto;margin-inline:auto 0;background:var(--me);color:var(--meink);border-bottom-right-radius:4px;white-space:pre-wrap}
@@ -93,8 +98,9 @@ header select{font-size:13px;background:var(--bg);border:1px solid var(--line);b
 .chips-label{font-size:12px;color:var(--mute);margin-top:10px}
 .caveat{font-size:12px;color:var(--mute);margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
 .thinking{display:flex;gap:10px;align-items:center;color:var(--mute)}
-.ask{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
-.ask input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:10px 16px}
+.ask{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);flex:none}
+/* 16px 미만이면 아이폰이 입력할 때 화면을 확대해 헤더가 밀려나므로 16px로 둔다 */
+.ask input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:10px 16px;font-size:16px}
 .send{font-weight:700;color:var(--meink);background:var(--me);border:0;border-radius:999px;padding:0 18px;cursor:pointer;flex:none}
 .send:disabled{opacity:.5;cursor:wait}
 /* 출처 원문 (답변 바로 아래 인라인) */
