@@ -15,9 +15,13 @@ OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT") or "300")
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE") or "60m"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-flash-latest"
+# 쉼표로 여러 개를 적으면 앞 모델이 붐비거나(503)·한도(429)·없는 모델(404)일 때 다음 모델로 시도한다.
+# 2026-10 측정: gemini-3.5-flash 전체 약 2.2초, gemini-3.5-flash-lite 약 2.0초(생각 끄기 미지원),
+# gemini-flash-latest 는 붐빔(503)이 잦았고, gemini-2.5 계열은 신규 사용자에게 제공 중단(404)
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-3.5-flash,gemini-3.5-flash-lite,gemini-flash-latest"
+GEMINI_MODELS = [m.strip() for m in GEMINI_MODEL.split(",") if m.strip()]
 GEMINI_BASE_URL = (os.getenv("GEMINI_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
-_gemini_thinking_off = True  # 빠른 답을 위해 '생각' 단계를 끈다. 모델이 지원하지 않으면 자동으로 해제
+_no_thinking_off = set()  # 빠른 답을 위해 '생각' 단계를 끄는데, 이 설정을 받지 않는 모델(400)은 여기에 적어 두고 빼고 보낸다
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5-5")
@@ -113,27 +117,44 @@ def _gemini_schema(s):
 
 
 def _gemini(system, prompt, strict):
-    global _gemini_thinking_off
     if not GEMINI_API_KEY:
         raise ModelError("gemini", "no key", ".env에 GEMINI_API_KEY가 없어요")
+    last = None
+    for model in GEMINI_MODELS:  # 앞 모델이 붐비면 다음 모델로 (글자를 보내기 시작한 뒤에는 바꾸지 않는다)
+        try:
+            r = _gemini_open(model, system, prompt, strict)
+        except ModelError as e:
+            last = e
+            if getattr(e, "code", 0) in (404, 429, 500, 503):
+                print(f"[Gemini] {model} 사용 불가({e.code}) → 다음 모델", flush=True)
+                continue
+            raise
+        yield from _gemini_read(r)
+        return
+    raise last
+
+
+def _gemini_open(model, system, prompt, strict):
     cfg = {"temperature": 0, "maxOutputTokens": 1024}
     if strict:
         cfg.update(responseMimeType="application/json", responseSchema=_gemini_schema(ANSWER_SCHEMA))
-    if _gemini_thinking_off:
+    if model not in _no_thinking_off:
         cfg["thinkingConfig"] = {"thinkingBudget": 0}
     body = {"systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": prompt}]}], "generationConfig": cfg}
-    req = urllib.request.Request(f"{GEMINI_BASE_URL}/models/{GEMINI_MODEL}:streamGenerateContent?alt=sse",
+    req = urllib.request.Request(f"{GEMINI_BASE_URL}/models/{model}:streamGenerateContent?alt=sse",
                                  data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY})
     try:
-        r = _open("gemini", req, 120)
+        return _open("gemini", req, 120)
     except ModelError as e:
-        if getattr(e, "code", 0) == 400 and "thinking" in getattr(e, "detail", "").lower() and _gemini_thinking_off:
-            _gemini_thinking_off = False  # 이 모델은 '생각 끄기'를 지원하지 않음 → 끄지 않고 다시
-            yield from _gemini(system, prompt, strict)
-            return
+        if getattr(e, "code", 0) == 400 and "thinkingConfig" in cfg:
+            _no_thinking_off.add(model)  # 이 모델은 '생각 끄기'를 받지 않음 → 빼고 다시
+            return _gemini_open(model, system, prompt, strict)
         raise
+
+
+def _gemini_read(r):
     with r:
         for raw in r:
             line = raw.decode("utf-8", "replace").strip()

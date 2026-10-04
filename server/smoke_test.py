@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-BASE = "http://localhost:8000"
+BASE = os.environ.get("SMOKE_BASE", "http://localhost:8000")
 HERE = Path(__file__).parent
 SAMPLES = HERE.parent / "samples"
 ENV = dotenv_values(HERE / ".env")
@@ -75,8 +75,8 @@ def main():
 
     for q, as_of in QUESTIONS:
         t = time.time()
-        st, r = call("POST", "/api/ask", token, {"question": q, "as_of": as_of})
-        print(f"\n[질문] {q}  ({st}, {time.time() - t:.0f}초)")
+        st, r = call("POST", "/api/ask", token, {"question": q, "as_of": as_of, "mode": os.environ.get("SMOKE_MODE") or None})
+        print(f"\n[질문] {q}  ({st}, {time.time() - t:.1f}초, {r.get('mode_label', '')})" + (f" ※ {r['note']}" if r.get("note") else ""))
         print(f"  답변{'' if r.get('verified') else ' (확인된 인용 없음)'}: {r.get('answer')}")
         for s in r.get("sources", []):
             mark = "확인된 인용 " + str(len(s["quotes"])) + "개" if s["quotes"] else "확인된 인용 없음"
