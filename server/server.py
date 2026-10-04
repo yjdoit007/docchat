@@ -130,7 +130,7 @@ app = FastAPI(title="문서 도우미", lifespan=lifespan)
 # ---------- 메일 / 인증 코드 ----------
 def send_mail(to, subject, body):
     if not SMTP_USER:  # 개발용: 메일 설정이 없으면 콘솔에 출력
-        print(f"\n[개발용 메일] 받는 사람: {to}\n제목: {subject}\n{body}\n")
+        print(f"\n[개발용 메일] 받는 사람: {to}\n제목: {subject}\n{body}\n", flush=True)
         return
     m = EmailMessage()
     m["From"], m["To"], m["Subject"] = SMTP_USER, to, subject
