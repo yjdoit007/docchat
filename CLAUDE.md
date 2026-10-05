@@ -55,7 +55,16 @@
 - 서버 자동 실행: 작업 스케줄러 `docchat 서버`(로그인 시, `deploy\start-server.ps1`). 서버를 다시 켜려면 이 작업을 멈췄다 시작한다.
   Claude가 백그라운드로 켠 서버는 2시간 뒤 꺼지므로 운영 서버로 쓰지 않는다.
 - 홈 화면 앱(PWA, 2026-10-05): manifest.json, sw.js(/api는 저장 안 함), 아이콘(icons\), 계정 메뉴 "앱으로 설치". 핸드폰 실제 설치 확인 필요.
-- 미착수: 실제 메일 발송, 운영 시작 전 data\ 초기화.
+- **운영 시작(2026-10-05)**: 시험 데이터는 `server\data-test-backup-20261005\`로 옮겨 보관하고 새 DB로 시작.
+  문서: 풍수해ㆍ지진재해보험법·시행령·시행규칙 PDF v1. 서버 주소·답변 모드(기본 Gemini, 허용 Gemini·로컬) 설정됨.
+  관리 작업은 `server\admin_tools.py`(init·add-doc·set-url·set-modes·status).
+- 자동 백업: 작업 스케줄러 `docchat 백업` 매일 23:30(놓치면 다음 로그인 때) → `C:\work\docchat\backups\`, 최근 14개, 기록 `backups\backup.log`.
+- 미착수: 실제 메일 발송(사용자가 Gmail 앱 비밀번호를 .env에 넣으면 진행).
+
+## 운영 DB 주의 (중요)
+- `flow_test.py`, `admin_test.py`, `hwp_test.py`, `smoke_test.py`(업로드 포함)는 **시험용 가입자·문서·질문 기록을 DB에 남긴다.**
+  운영 중에는 실행하지 말고, 필요하면 `DATA_DIR`을 시험용 폴더로 바꾼 별도 서버(다른 포트)에서 돌린다.
+- 이전 버전 문서와 질문 기록은 증빙이므로 지우지 않는다. 데이터를 옮기거나 지우는 일은 반드시 사용자 확인 후 백업부터.
 - GitHub: 로컬 커밋만 하고 있음. 테스트가 어느 정도 끝나면 사용자 확인 후 push.
 
 ## 실행 방법 (Windows)

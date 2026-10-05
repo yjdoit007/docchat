@@ -503,6 +503,11 @@ def upload(title: str = Form(...), file: UploadFile = File(...), admin=Depends(r
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise err(413, "파일이 너무 커요. 100MB 이하로 올려 주세요.")
+    return add_document(title, file.filename, data, admin["id"])
+
+
+def add_document(title, filename, data, admin_id):
+    """문서 한 개를 새 문서 또는 새 버전으로 저장한다(화면 업로드와 관리 스크립트가 함께 쓴다)."""
     try:
         kind, texts = doctext.extract(data)
     except doctext.DocError as e:
@@ -523,7 +528,7 @@ def upload(title: str = Form(...), file: UploadFile = File(...), admin=Depends(r
             ver = 1
         vid = c.execute("INSERT INTO versions(doc_id,version,filename,uploaded_at,uploaded_by,sha256,page_count,kind) "
                         "VALUES(?,?,?,?,?,?,?,?)",
-                        (doc_id, ver, file.filename, now(), admin["id"], sha, len(texts) if paged else None, kind)).lastrowid
+                        (doc_id, ver, filename, now(), admin_id, sha, len(texts) if paged else None, kind)).lastrowid
         c.executemany("INSERT INTO pages VALUES(?,?,?)", [(vid, i + 1, t) for i, t in enumerate(texts)])
         n_chunks = save_chunks(c, vid, texts, paged)
     (FILES / str(doc_id)).mkdir(parents=True, exist_ok=True)

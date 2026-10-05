@@ -5,6 +5,8 @@
 
 # 데이터 (DB, 원본 PDF) — 백업 대상이지만 저장소에는 넣지 않음
 data/
+data-*/
+backups/
 *.db
 *.sqlite
 *.sqlite3
