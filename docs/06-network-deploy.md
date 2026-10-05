@@ -1,73 +1,36 @@
 # 06. 외부 접속 구성
 
-## 결정 (2026-10-04)
-**공유기 포트포워딩 + DuckDNS 무료 도메인 + Caddy(HTTPS 자동)**. 팀 6~20명, 핸드폰·PC 혼용 → 앱 설치 없이 주소만으로 접속.
-
-## 이 노트북의 네트워크 (2026-10-04 확인)
-| 항목 | 값 |
-|---|---|
-| Wi-Fi | U+Net (LG U+ 공유기로 보임), 공유기 주소 192.168.219.1 |
-| 노트북 내부 IP | 192.168.219.152 (지금은 자동 할당 → 고정 필요) |
-| 노트북 Wi-Fi MAC | 34-FD-70-BD-31-93 |
-| 공인 IP | 116.39.20.11 (바뀔 수 있음 → DuckDNS가 자동 갱신) |
-| CGNAT | 아님 (공유기가 공인 IP를 직접 받음 → 포트포워딩 가능) |
+## 결정 (2026-10-05)
+**Tailscale Funnel**. 공유기 설정 없이 노트북이 바깥으로 연결을 맺고, Tailscale이 HTTPS 공개 주소를 준다.
+- 공개 주소: **https://docchat.tail15f4b2.ts.net** (Tailscale 계정 yjdoit007, 기기 이름 docchat)
+- 팀원은 앱 설치 없이 주소만으로 접속. 인증서는 Let's Encrypt, Tailscale이 자동 갱신
+- 처음 계획(포트포워딩 + DuckDNS + Caddy)은 메인 공유기(LGU_5F49) 관리자 로그인이 안 돼 보류.
+  `deploy\Caddyfile`, `run-caddy.ps1`, DuckDNS 자동 갱신 코드는 나중을 위해 남겨 둔다(쓰지 않으면 `.env`의 DUCKDNS_* 를 비워도 됨)
 
 ## 구성
 ```
-[핸드폰/PC] --https://<이름>.duckdns.org--> [공유기 443] --> [노트북 Caddy :443] --> [docchat 서버 127.0.0.1:8000]
-                                                                      └ HTTPS 인증서 자동 발급·갱신(Let's Encrypt)
-[docchat 서버] --5분마다--> DuckDNS "지금 공인 IP는 이것" (IP가 바뀌어도 주소 유지)
+[핸드폰/PC] --https://docchat.tail15f4b2.ts.net--> [Tailscale Funnel 중계] --> [노트북 tailscaled] --> [docchat 서버 127.0.0.1:8000]
 ```
+- docchat 서버는 **127.0.0.1** 로만 연다(같은 Wi-Fi에서도 직접 접속 불가, 공개 주소로만)
+- `.env`의 `API_DOCS=0` 으로 API 시험 화면(/docs)을 껐다
+- Funnel 설정은 `tailscale funnel --bg 8000` 으로 저장돼 있어 Tailscale(윈도우 서비스)이 켜지면 자동으로 다시 열린다
 
-## 직접 하실 일 (계정·공유기 로그인이 필요해서 Claude가 대신할 수 없음)
-### 1. DuckDNS 무료 주소 만들기
-1. https://www.duckdns.org 접속 → 위쪽에서 Google 또는 GitHub 계정으로 로그인
-2. `sub domain` 칸에 원하는 이름 입력(예: `ourteam-docchat`) → **add domain**
-3. 화면 위의 **token**(긴 영문·숫자)을 복사
-4. `C:\work\docchat\server\.env` 를 메모장으로 열어 아래처럼 직접 입력하고 저장
-   ```
-   DUCKDNS_DOMAIN=ourteam-docchat
-   DUCKDNS_TOKEN=(복사한 토큰)
-   ```
-   토큰은 비밀번호와 같다. 채팅이나 메신저에 붙여 넣지 않는다. `.env`는 GitHub에 올라가지 않는다.
+## 확인 결과 (2026-10-05)
+| 항목 | 결과 |
+|---|---|
+| 메인 화면 / 로그인 없는 API / /docs | 200 / 401 / 404 |
+| HTTPS 인증서 | CN=docchat.tail15f4b2.ts.net, Let's Encrypt, 2027-01-03 만료(자동 갱신) |
+| Gemini 스트리밍(공개 주소 경유) | 첫 글자 1.1~1.7초, 전체 2.3~2.9초, 인용 확인 |
+| Funnel이 더하는 지연 | 거의 없음 (노트북 안 주소와 같음) |
 
-### 2. 공유기 설정 (LG U+ 공유기 기준, 모델마다 메뉴 이름이 조금 다름)
-1. 브라우저에서 http://192.168.219.1 접속 → 공유기 아래 스티커의 관리자 비밀번호로 로그인
-2. **노트북 주소 고정**: `네트워크 설정 > LAN/DHCP > 고정 IP 할당(DHCP 예약)` 같은 메뉴에서
-   MAC `34-FD-70-BD-31-93` → IP `192.168.219.152` 로 추가
-3. **포트포워딩**: `NAT 설정 > 포트포워딩` 같은 메뉴에서 규칙 추가
-   - 외부 포트 **443** → 내부 IP **192.168.219.152**, 내부 포트 **443**, 프로토콜 TCP
-   - 80번은 열지 않는다(Caddy는 443만으로 인증서를 받는다). 8000번은 **절대 열지 않는다**
-4. 저장 후 공유기 재시작이 필요하면 재시작
-
-### 3. 방화벽 허용
-Caddy를 처음 실행할 때 Windows가 "액세스 허용" 창을 띄우면 **개인 네트워크/공용 네트워크 허용**을 누른다.
-(지금 Wi-Fi가 '공용' 네트워크로 잡혀 있음)
-
-## Claude가 준비해 둔 것
-- `server.py`: `.env`에 DUCKDNS_DOMAIN·DUCKDNS_TOKEN이 있으면 5분마다 DuckDNS 주소 갱신(관리자 화면 > 서버 설정에서 상태 확인)
-- `deploy\Caddyfile`: 도메인 → 127.0.0.1:8000 전달, HTTPS, 보안 헤더, 접속 로그(`deploy\logs\`)
-- `deploy\run-caddy.ps1`: `.env`의 도메인으로 Caddy 실행
-- `.env`의 `API_DOCS=0` 으로 바꾸면 API 시험 화면(/docs)을 외부에서 볼 수 없게 끈다
-
-## 공개 순서
-1. Caddy 설치 (winget `CaddyServer.Caddy`)
-2. docchat 서버 실행: 외부 공개 시에는 `--host 127.0.0.1` 로 켜서 8000번을 노트북 안에서만 열어 둔다
-   ```powershell
-   cd C:\work\docchat\server
-   .venv\Scripts\python.exe -m uvicorn server:app --host 127.0.0.1 --port 8000
-   ```
-3. 다른 창에서 `C:\work\docchat\deploy\run-caddy.ps1` 실행 → 인증서 발급 로그 확인
-4. 핸드폰 **Wi-Fi를 끄고 LTE/5G로** `https://<이름>.duckdns.org` 접속 → 로그인 화면이 자물쇠(🔒)와 함께 뜨면 성공
-5. 관리자 화면 > 서버 설정에 `https://<이름>.duckdns.org` 저장, 팀원에게 안내
+## 운영
+- 서버 실행: `deploy\start-server.ps1` (멈추면 10초 뒤 다시 시작, 기록은 `deploy\logs\`)
+- Funnel 상태: `tailscale funnel status` / 끄기: `tailscale funnel --https=443 off`
+- 노트북이 켜져 있고 절전하지 않아야 한다(전원 연결 시 절전 '안 함', 덮개 닫아도 '아무 것도 안 함')
+- `data\` 폴더(DB + 원본 문서)를 정기 백업한다
+- 관리자 화면 > 서버 설정에 `https://docchat.tail15f4b2.ts.net` 저장 후 팀원에게 안내
 
 ## 주의사항
-- 포트를 연다는 것은 인터넷 누구나 로그인 화면까지는 볼 수 있다는 뜻이다. 로그인 시도 제한·관리자 승인 가입은 구현돼 있다.
-- 공개 전에 시험용 가입자·문서가 든 `data\`를 정리한다(운영 준비 단계).
-- 노트북이 켜져 있고 절전하지 않아야 한다. 덮개를 닫아도 동작하게 전원 옵션을 바꾼다.
-- `data\` 폴더(DB + 원본 문서)를 정기 백업한다.
-- 집 공유기에서 같은 주소(duckdns)로 접속이 안 되면(공유기가 '헤어핀 NAT'를 지원하지 않는 경우) 집 안에서는 http://192.168.219.152:8000 을 쓴다.
-
-## 대안 (선택하지 않음)
-- **Tailscale**: 외부 노출이 없어 가장 안전하지만 팀원 모두 앱 설치 필요, 무료 요금제 사용자 수 제한.
-- **Cloudflare Tunnel**: 포트를 열지 않아도 되지만 고정 주소에는 유료 도메인이 필요.
+- 공개 주소이므로 인터넷 누구나 로그인 화면까지는 볼 수 있다. 로그인 시도 제한·이메일 인증·관리자 승인 가입은 구현돼 있다.
+- Tailscale 무료 요금제의 Funnel은 통신량 제한이 있다(문서 질문 용도로는 충분).
+- 주소에 들어간 `tail15f4b2` 는 Tailscale 계정(tailnet)마다 다르다. 계정을 바꾸면 주소도 바뀐다.

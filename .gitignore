@@ -23,3 +23,8 @@ deploy/logs/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# 직접 관리하는 비밀 메모 — 올리지 않음
+중요정보.txt
+*비밀*.txt
+

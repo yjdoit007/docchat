@@ -50,7 +50,9 @@
   질문 기록, 작업 기록(audit 테이블), 서버 설정(settings 테이블). 점검: `admin_test.py <서버 콘솔 로그>` 18/18.
 - 한글 문서 지원 완료: `server\doctext.py`(PDF·HWP·HWPX·HWPML 글자 추출). 한글은 페이지 없이 조문 단위 출처.
   점검: `hwp_test.py` 20/20 (실제 HWPML·HWPX 법령 파일 포함). 바이너리 HWP는 실제 파일로 아직 미확인.
-- 미착수: 외부 접속(포트포워딩·도메인·HTTPS), 실제 메일 발송, 운영 시작 전 data\ 초기화.
+- 외부 접속 완료(2026-10-05): **Tailscale Funnel** → https://docchat.tail15f4b2.ts.net → 127.0.0.1:8000. 서버는 `deploy\start-server.ps1` 로 실행.
+  공유기(LGU_5F49) 포트포워딩은 관리자 로그인 불가로 보류. Caddy/DuckDNS 파일은 남겨 둠.
+- 미착수: 서버 자동 실행 등록, 실제 메일 발송, 홈 화면 앱(PWA), 운영 시작 전 data\ 초기화.
 - GitHub: 로컬 커밋만 하고 있음. 테스트가 어느 정도 끝나면 사용자 확인 후 push.
 
 ## 실행 방법 (Windows)

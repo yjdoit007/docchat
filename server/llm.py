@@ -16,9 +16,11 @@ OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE") or "60m"
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 # 쉼표로 여러 개를 적으면 앞 모델이 붐비거나(503)·한도(429)·없는 모델(404)일 때 다음 모델로 시도한다.
-# 2026-10 측정: gemini-3.5-flash 전체 약 2.2초, gemini-3.5-flash-lite 약 2.0초(생각 끄기 미지원),
-# gemini-flash-latest 는 붐빔(503)이 잦았고, gemini-2.5 계열은 신규 사용자에게 제공 중단(404)
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-3.5-flash,gemini-3.5-flash-lite,gemini-flash-latest"
+# 2026-10 측정: gemini-3.5-flash-lite 가 꾸준히 약 2초(생각 끄기 미지원). gemini-3.5-flash 는 한가할 때 2초지만
+# 붐비는 시간에는 10초 이상·503. gemini-flash-latest 도 503이 잦았고, gemini-2.5 계열은 신규 사용자 제공 중단(404)
+GEMINI_MODEL = (os.getenv("GEMINI_MODEL", "").strip()
+                or "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash,gemini-flash-latest")
+GEMINI_SWITCH_AFTER = int(os.getenv("GEMINI_SWITCH_AFTER") or 10)  # 이 초 안에 답을 시작하지 않으면 다음 모델로
 GEMINI_MODELS = [m.strip() for m in GEMINI_MODEL.split(",") if m.strip()]
 GEMINI_BASE_URL = (os.getenv("GEMINI_BASE_URL") or "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
 _no_thinking_off = set()  # 빠른 답을 위해 '생각' 단계를 끄는데, 이 설정을 받지 않는 모델(400)은 여기에 적어 두고 빼고 보낸다
@@ -78,7 +80,10 @@ def _open(provider, req, timeout):
         err.code, err.detail = e.code, detail
         raise err
     except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise ModelError(provider, str(e), "모델 서버에 연결하지 못했어요")
+        timed_out = isinstance(e, TimeoutError) or "timed out" in str(e)
+        err = ModelError(provider, str(e), "모델 응답이 너무 느려요" if timed_out else "모델 서버에 연결하지 못했어요")
+        err.code = "timeout" if timed_out else None
+        raise err
 
 
 # ---------- Ollama (로컬) ----------
@@ -120,21 +125,40 @@ def _gemini(system, prompt, strict):
     if not GEMINI_API_KEY:
         raise ModelError("gemini", "no key", ".env에 GEMINI_API_KEY가 없어요")
     last = None
-    for model in GEMINI_MODELS:  # 앞 모델이 붐비면 다음 모델로 (글자를 보내기 시작한 뒤에는 바꾸지 않는다)
+    for n, model in enumerate(GEMINI_MODELS):  # 앞 모델이 붐비거나 느리면 다음 모델로 (글자를 보내기 시작한 뒤에는 바꾸지 않는다)
+        is_last = n == len(GEMINI_MODELS) - 1
         try:
-            r = _gemini_open(model, system, prompt, strict)
+            r = _gemini_open(model, system, prompt, strict, 120 if is_last else GEMINI_SWITCH_AFTER)
+            chunks = _gemini_read(r)
+            first = next(chunks, None)  # 첫 글자가 올 때까지(= 응답 시작) 기다린다
         except ModelError as e:
             last = e
-            if getattr(e, "code", 0) in (404, 429, 500, 503):
+            if getattr(e, "code", 0) in (404, 429, 500, 503, "timeout") and not is_last:
                 print(f"[Gemini] {model} 사용 불가({e.code}) → 다음 모델", flush=True)
                 continue
             raise
-        yield from _gemini_read(r)
+        except (TimeoutError, OSError) as e:  # 응답을 열었지만 첫 글자가 늦음
+            last = ModelError("gemini", str(e), "Gemini 응답이 너무 느려요")
+            if not is_last:
+                print(f"[Gemini] {model} 응답 지연 → 다음 모델", flush=True)
+                continue
+            raise last
+        if first is not None:
+            _set_timeout(r, 120)  # 답을 시작한 뒤에는 넉넉히 기다린다
+            yield first
+            yield from chunks
         return
     raise last
 
 
-def _gemini_open(model, system, prompt, strict):
+def _set_timeout(resp, seconds):
+    try:
+        resp.fp.raw._sock.settimeout(seconds)
+    except Exception:
+        pass
+
+
+def _gemini_open(model, system, prompt, strict, timeout=120):
     cfg = {"temperature": 0, "maxOutputTokens": 1024}
     if strict:
         cfg.update(responseMimeType="application/json", responseSchema=_gemini_schema(ANSWER_SCHEMA))
@@ -146,11 +170,11 @@ def _gemini_open(model, system, prompt, strict):
                                  data=json.dumps(body).encode(),
                                  headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY})
     try:
-        return _open("gemini", req, 120)
+        return _open("gemini", req, timeout)
     except ModelError as e:
         if getattr(e, "code", 0) == 400 and "thinkingConfig" in cfg:
             _no_thinking_off.add(model)  # 이 모델은 '생각 끄기'를 받지 않음 → 빼고 다시
-            return _gemini_open(model, system, prompt, strict)
+            return _gemini_open(model, system, prompt, strict, timeout)
         raise
 
 

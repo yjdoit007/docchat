@@ -9,7 +9,7 @@ import server as S
 QS = ["정부가 보험료를 얼마나 지원하나요?", "보험사업자는 누가 될 수 있어요?", "손해평가인 보수교육은 언제 받아요?"]
 k, chars = llm.LIMITS["gemini"]
 for model in sys.argv[1:]:
-    llm.GEMINI_MODELS = [model]
+    llm.GEMINI_MODELS = model.split("+")  # 'a+b' 로 주면 자동 전환 순서를 그대로 시험
     times, firsts, ok_n = [], [], 0
     for q in QS:
         with S.db() as c:
