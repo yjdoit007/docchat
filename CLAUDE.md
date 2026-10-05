@@ -59,6 +59,7 @@
   문서: 풍수해ㆍ지진재해보험법·시행령·시행규칙 PDF v1. 서버 주소·답변 모드(기본 Gemini, 허용 Gemini·로컬) 설정됨.
   관리 작업은 `server\admin_tools.py`(init·add-doc·set-url·set-modes·status).
 - 자동 백업: 작업 스케줄러 `docchat 백업` 매일 23:30(놓치면 다음 로그인 때) → `C:\work\docchat\backups\`, 최근 14개, 기록 `backups\backup.log`.
+  이어서 **OneDrive**(`%OneDrive%\docchat-backups`, 클라우드 자동 업로드)에도 복사, 최근 14개. 로그인 비밀 키 `jwt.secret`은 클라우드로 보내지 않음.
 - 메일 발송 개통(2026-10-05): Gmail 앱 비밀번호. 점검 `server\mail_check.py`(메일 보내기는 사용자 확인 후).
 - 서버 노트북은 배터리일 때 3분 뒤 절전 → 서버·원격 제어 끊김. 충전기 연결 유지가 전제.
 
