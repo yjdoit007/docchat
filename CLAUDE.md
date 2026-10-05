@@ -52,7 +52,9 @@
   점검: `hwp_test.py` 20/20 (실제 HWPML·HWPX 법령 파일 포함). 바이너리 HWP는 실제 파일로 아직 미확인.
 - 외부 접속 완료(2026-10-05): **Tailscale Funnel** → https://docchat.tail15f4b2.ts.net → 127.0.0.1:8000. 서버는 `deploy\start-server.ps1` 로 실행.
   공유기(LGU_5F49) 포트포워딩은 관리자 로그인 불가로 보류. Caddy/DuckDNS 파일은 남겨 둠.
-- 미착수: 서버 자동 실행 등록, 실제 메일 발송, 홈 화면 앱(PWA), 운영 시작 전 data\ 초기화.
+- 서버 자동 실행: 작업 스케줄러 `docchat 서버`(로그인 시, `deploy\start-server.ps1`). 서버를 다시 켜려면 이 작업을 멈췄다 시작한다.
+  Claude가 백그라운드로 켠 서버는 2시간 뒤 꺼지므로 운영 서버로 쓰지 않는다.
+- 미착수: 실제 메일 발송, 홈 화면 앱(PWA), 운영 시작 전 data\ 초기화.
 - GitHub: 로컬 커밋만 하고 있음. 테스트가 어느 정도 끝나면 사용자 확인 후 push.
 
 ## 실행 방법 (Windows)

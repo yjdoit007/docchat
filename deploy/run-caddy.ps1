@@ -1,4 +1,4 @@
-# docchat 외부 접속(HTTPS) 시작: server\.env 의 DUCKDNS_DOMAIN 으로 Caddy를 실행한다.
+﻿# docchat 외부 접속(HTTPS) 시작: server\.env 의 DUCKDNS_DOMAIN 으로 Caddy를 실행한다.
 # 사용: PowerShell에서  .\deploy\run-caddy.ps1   (docchat 서버는 따로 켜 둔다)
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path

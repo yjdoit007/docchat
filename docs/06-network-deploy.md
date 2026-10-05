@@ -24,7 +24,11 @@
 | Funnel이 더하는 지연 | 거의 없음 (노트북 안 주소와 같음) |
 
 ## 운영
-- 서버 실행: `deploy\start-server.ps1` (멈추면 10초 뒤 다시 시작, 기록은 `deploy\logs\`)
+- 서버 실행: `deploy\start-server.ps1` (멈추면 10초 뒤 다시 시작, 남은 이전 서버 정리, 기록은 `deploy\logs\server-날짜.log`)
+- **자동 실행**: 작업 스케줄러 `docchat 서버` — 이 사용자로 로그인하면 창 없이 실행(2026-10-05 등록).
+  멈추기: 작업 스케줄러에서 '사용 안 함' 또는 `Stop-ScheduledTask -TaskName 'docchat 서버'`
+  (멈춘 뒤 8000번에 파이썬이 남으면 작업 관리자에서 python.exe 종료)
+- 스크립트(.ps1)에 한글이 있으면 **UTF-8(BOM)** 으로 저장해야 Windows PowerShell 5.1에서 글자가 깨지지 않는다
 - Funnel 상태: `tailscale funnel status` / 끄기: `tailscale funnel --https=443 off`
 - 노트북이 켜져 있고 절전하지 않아야 한다(전원 연결 시 절전 '안 함', 덮개 닫아도 '아무 것도 안 함')
 - `data\` 폴더(DB + 원본 문서)를 정기 백업한다
