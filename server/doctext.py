@@ -10,14 +10,21 @@ import pymupdf
 KINDS = {"pdf": ("application/pdf", ".pdf"),
          "hwp": ("application/x-hwp", ".hwp"),
          "hwpx": ("application/hwp+zip", ".hwpx"),
-         "hwpml": ("application/x-hwpml", ".hwp")}
+         "hwpml": ("application/x-hwpml", ".hwp"),
+         "md": ("text/markdown; charset=utf-8", ".md")}  # 사용 안내 같은 글 문서(## 제목 단위로 나눔)
 
 
 class DocError(ValueError):
     """사용자에게 그대로 보여 줄 수 있는 오류"""
 
 
-def detect(data):
+def detect(data, filename=None):
+    if filename and re.search(r"\.(md|txt)$", filename, re.I):
+        try:
+            data.decode("utf-8")
+            return "md"
+        except UnicodeDecodeError:
+            return None
     if data.startswith(b"%PDF"):
         return "pdf"
     if data.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):  # OLE(복합 문서) = HWP 5.0 바이너리
@@ -34,12 +41,13 @@ def detect(data):
     return None
 
 
-def extract(data):
-    kind = detect(data)
+def extract(data, filename=None):
+    kind = detect(data, filename)
     if not kind:
-        raise DocError("PDF 또는 한글(HWP, HWPX) 파일만 올릴 수 있어요.")
+        raise DocError("PDF, 한글(HWP, HWPX), 글 문서(.md, .txt, UTF-8)만 올릴 수 있어요.")
     try:
-        texts = {"pdf": _pdf, "hwp": _hwp, "hwpx": _hwpx, "hwpml": _hwpml}[kind](data)
+        texts = {"pdf": _pdf, "hwp": _hwp, "hwpx": _hwpx, "hwpml": _hwpml,
+                 "md": lambda d: [d.decode("utf-8").lstrip("﻿")]}[kind](data)
     except DocError:
         raise
     except Exception:

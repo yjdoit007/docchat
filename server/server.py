@@ -112,7 +112,7 @@ def init():
         for (vid, kind) in c.execute("SELECT id, kind FROM versions WHERE id NOT IN "
                                      "(SELECT DISTINCT version_id FROM chunks)").fetchall():
             texts = [r["text"] for r in c.execute("SELECT text FROM pages WHERE version_id=? ORDER BY page_no", (vid,))]
-            save_chunks(c, vid, texts, (kind or "pdf") == "pdf")
+            save_chunks(c, vid, texts, (kind or "pdf") == "pdf", kind)
         if ADMIN_EMAIL and ADMIN_PASSWORD and not c.execute(
                 "SELECT 1 FROM users WHERE email=?", (ADMIN_EMAIL,)).fetchone():
             c.execute("INSERT INTO users(name,email,pw_hash,role,status,created_at) VALUES(?,?,?,?,?,?)",
@@ -509,7 +509,7 @@ def upload(title: str = Form(...), file: UploadFile = File(...), admin=Depends(r
 def add_document(title, filename, data, admin_id):
     """문서 한 개를 새 문서 또는 새 버전으로 저장한다(화면 업로드와 관리 스크립트가 함께 쓴다)."""
     try:
-        kind, texts = doctext.extract(data)
+        kind, texts = doctext.extract(data, filename)
     except doctext.DocError as e:
         raise err(400, str(e))
     paged = kind == "pdf"  # 한글 문서는 고정된 페이지가 없어 페이지 번호를 쓰지 않는다
@@ -530,7 +530,7 @@ def add_document(title, filename, data, admin_id):
                         "VALUES(?,?,?,?,?,?,?,?)",
                         (doc_id, ver, filename, now(), admin_id, sha, len(texts) if paged else None, kind)).lastrowid
         c.executemany("INSERT INTO pages VALUES(?,?,?)", [(vid, i + 1, t) for i, t in enumerate(texts)])
-        n_chunks = save_chunks(c, vid, texts, paged)
+        n_chunks = save_chunks(c, vid, texts, paged, kind)
     (FILES / str(doc_id)).mkdir(parents=True, exist_ok=True)
     stored_file(doc_id, ver, kind).write_bytes(data)
     return {"document": title, "version": ver, "version_id": vid, "kind": kind,
@@ -654,8 +654,29 @@ def make_chunks(texts, paged=True):
     return out
 
 
-def save_chunks(c, vid, texts, paged=True):
-    rows = make_chunks(texts, paged)
+def md_chunks(text):
+    """글 문서(마크다운)를 '## 제목' 단위로 나눈다. 제목이 출처 이름(label)이 된다. '# 큰 제목'과 그 앞은 머리말."""
+    chunks, cur = [], None
+    for line in text.splitlines():
+        m = re.match(r"^(#{1,3})\s+(.+?)\s*#*\s*$", line)
+        if m and len(m.group(1)) >= 2:
+            cur = [m.group(2).strip(), []]
+            chunks.append(cur)
+        elif cur is None or (m and len(m.group(1)) == 1):
+            cur = ["머리말", []]
+            chunks.append(cur)
+        cur[1].append(line)
+    out, seen = [], {}
+    for label, lines in chunks:
+        body = "\n".join(lines).strip()
+        if body:
+            seen[label] = seen.get(label, 0) + 1  # 같은 제목이 또 나오면 (2), (3)을 붙여 구분
+            out.append((label if seen[label] == 1 else f"{label} ({seen[label]})", None, None, body))
+    return out
+
+
+def save_chunks(c, vid, texts, paged=True, kind=None):
+    rows = md_chunks("\n".join(texts)) if kind == "md" else make_chunks(texts, paged)
     c.executemany("INSERT INTO chunks VALUES(?,?,?,?,?,?)",
                   [(vid, i, lb, pf, pt, t) for i, (lb, pf, pt, t) in enumerate(rows)])
     return len(rows)

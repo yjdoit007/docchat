@@ -61,6 +61,13 @@
 - 자동 백업: 작업 스케줄러 `docchat 백업` 매일 23:30(놓치면 다음 로그인 때) → `C:\work\docchat\backups\`, 최근 14개, 기록 `backups\backup.log`.
 - 미착수: 실제 메일 발송(사용자가 Gmail 앱 비밀번호를 .env에 넣으면 진행).
 
+## 사용 안내 (앱 기능을 바꾸면 함께 고친다)
+- `docs\app-guide.md`: 챗봇이 앱 사용법 질문에 근거로 쓰는 문서. 운영 DB에 "문서 도우미 사용 안내"(글 문서 md)로 등록됨.
+  고친 뒤 `admin_tools.py add-doc "문서 도우미 사용 안내" ..\docs\app-guide.md` 로 새 버전을 올린다. `## 제목`이 출처 이름.
+  확인은 `guide_test.py`(운영 data 복사본에서 실행, 운영 기록에 안 남음).
+- `docs\team-guide.html`: 팀원용 한 장 안내(Artifact https://claude.ai/artifact/FfDsrHGRvooUdJUictZBEj, 비공개 — 공유는 페이지의 Share 메뉴).
+  앱 안 `server\static\guide.html`은 이 파일 앞에 doctype/head를 붙여 만든다. 고치면 둘 다 갱신하고 Artifact도 다시 게시.
+
 ## 운영 DB 주의 (중요)
 - `flow_test.py`, `admin_test.py`, `hwp_test.py`, `smoke_test.py`(업로드 포함)는 **시험용 가입자·문서·질문 기록을 DB에 남긴다.**
   운영 중에는 실행하지 말고, 필요하면 `DATA_DIR`을 시험용 폴더로 바꾼 별도 서버(다른 포트)에서 돌린다.

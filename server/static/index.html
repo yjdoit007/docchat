@@ -113,7 +113,8 @@
   </header>
   <div class="msgs" id="msgs" aria-live="polite">
    <div class="m bot"><p>등록된 문서에서 근거를 찾아 답해 드려요. 답변마다 출처 조문과 원문 인용을 함께 보여 드려요.</p>
-    <p class="mute">예: “풍수해보험의 보험목적물은 뭐예요?”, “정부가 보험료를 얼마나 지원하나요?”</p></div>
+    <p class="mute">예: “풍수해보험의 보험목적물은 뭐예요?”, “정부가 보험료를 얼마나 지원하나요?”</p>
+    <p class="mute">앱 사용법도 물어보세요. 예: “앱은 어떻게 설치해요?”, “빠름 모드랑 내부 모드 차이가 뭐예요?” · <a href="guide.html" target="_blank" rel="noopener">사용 안내 보기</a></p></div>
   </div>
   <div class="modes" id="modes" role="radiogroup" aria-label="답변 모드" hidden></div>
   <form id="ask" class="ask">
@@ -147,7 +148,7 @@
      <input id="uptitle" list="titles" placeholder="예: 풍수해ㆍ지진재해보험법" autocomplete="off"><datalist id="titles"></datalist>
      <div class="hint">기존 문서의 새 버전이면 목록에서 같은 이름을 고르세요.</div><div class="err" id="uptitle-e"></div>
      <label for="upfile">파일 (PDF, HWP, HWPX)</label>
-     <input id="upfile" type="file" accept="application/pdf,.pdf,.hwp,.hwpx"><div class="err" id="upfile-e"></div>
+     <input id="upfile" type="file" accept="application/pdf,.pdf,.hwp,.hwpx,.md,.txt"><div class="err" id="upfile-e"></div>
      <div id="upmsg" class="note" role="status"></div>
      <button class="pri" type="submit">올리기</button>
     </form>
