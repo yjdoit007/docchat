@@ -997,6 +997,21 @@ def logs(limit: int = 50, admin=Depends(require_admin)):
     return out
 
 
+@app.middleware("http")
+async def cache_headers(request, call_next):
+    """화면 파일은 매번 새 버전인지 확인하게(no-cache) → 고친 화면이 팀원 핸드폰에 바로 반영된다.
+    아이콘은 하루 동안 저장해도 된다. /api 는 저장하지 않는다."""
+    res = await call_next(request)
+    p = request.url.path
+    if p.startswith("/api/"):
+        res.headers.setdefault("Cache-Control", "no-store")
+    elif p.startswith("/icons/"):
+        res.headers["Cache-Control"] = "public, max-age=86400"
+    else:
+        res.headers["Cache-Control"] = "no-cache"
+    return res
+
+
 # 웹앱 화면(static 폴더)이 있으면 같은 서버에서 제공 → 접속 주소 하나로 해결
 if Path("static").is_dir():
     app.mount("/", StaticFiles(directory="static", html=True), name="static")
