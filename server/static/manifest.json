@@ -1,0 +1,18 @@
+{
+  "name": "문서 도우미",
+  "short_name": "문서도우미",
+  "description": "공용 문서를 근거로 조문과 원문 인용을 붙여 답하는 도우미",
+  "lang": "ko",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#151A26",
+  "theme_color": "#151A26",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

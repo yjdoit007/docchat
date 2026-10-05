@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>문서 도우미</title>
+<!-- 홈 화면 앱(PWA) -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#151A26">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="문서 도우미">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
@@ -96,6 +105,8 @@
    <button class="menu" id="who" type="button" aria-haspopup="true" aria-expanded="false"></button>
    <div class="pop" id="whopop" hidden>
     <div class="pop-who" id="whoinfo"></div>
+    <button type="button" id="install" hidden>📲 앱으로 설치</button>
+    <div class="hint ios-guide" id="iosguide" hidden>아이폰: Safari 아래쪽 <b>공유 버튼(□↑)</b> → <b>홈 화면에 추가</b>를 누르면 앱처럼 쓸 수 있어요.</div>
     <button type="button" id="toadmin" hidden>관리자 화면</button>
     <button type="button" id="logout">로그아웃</button>
    </div>

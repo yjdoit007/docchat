@@ -121,7 +121,8 @@ header select{font-size:13px;background:var(--bg);border:1px solid var(--line);b
 mark{background:var(--mark);color:inherit;padding:1px 0}
 
 /* ---------- 관리자 화면 ---------- */
-.pop button+button{margin-top:6px}
+.pop button+button,.pop .ios-guide+button{margin-top:6px}
+.pop .ios-guide{margin:6px 0 0;line-height:1.5}
 .adm{display:flex;flex-direction:column;min-height:0;height:100%;background:var(--bg)}
 .adm header{background:var(--panel)}
 .adm header>b{margin-right:auto}

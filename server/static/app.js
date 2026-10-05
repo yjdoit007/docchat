@@ -613,6 +613,28 @@
     }, function (err) { bad("pubu", err.message); });
   });
 
+  // ---------- 홈 화면 앱(PWA) ----------
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(function () {});
+  }
+  var installEvt = null;
+  var standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone === true;
+  var ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  function showInstall() { $("install").hidden = standalone || (!installEvt && !ios); }
+  window.addEventListener("beforeinstallprompt", function (e) {  // 안드로이드 크롬·PC 크롬/엣지: 설치 창을 직접 띄울 수 있다
+    e.preventDefault(); installEvt = e; showInstall();
+  });
+  window.addEventListener("appinstalled", function () { installEvt = null; standalone = true; showInstall(); });
+  $("install").addEventListener("click", function () {
+    if (installEvt) {
+      installEvt.prompt();
+      installEvt.userChoice.then(function () { installEvt = null; showInstall(); $("whopop").hidden = true; });
+    } else if (ios) {
+      $("iosguide").hidden = !$("iosguide").hidden;  // 아이폰은 설치 창을 띄울 수 없어 방법을 안내
+    }
+  });
+  showInstall();
+
   // ---------- 시작 ----------
   if (token) {
     api("GET", "/api/me").then(start, function () { logout(); });

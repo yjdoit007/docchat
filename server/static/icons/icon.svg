@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 문서 도우미 아이콘: 어두운 바탕 위 문서 한 장, 근거 문장에 형광펜 -->
+  <rect width="512" height="512" fill="#151A26"/>
+  <path d="M150 96 H312 L376 160 V416 H150 Z" fill="#FFFEFA"/>
+  <path d="M312 96 V160 H376 Z" fill="#DFE3EB"/>
+  <rect x="186" y="196" width="150" height="18" rx="9" fill="#C9CEDA"/>
+  <rect x="180" y="242" width="164" height="34" rx="6" fill="#FFE27A"/>
+  <rect x="186" y="250" width="150" height="18" rx="9" fill="#B26A00"/>
+  <rect x="186" y="304" width="150" height="18" rx="9" fill="#C9CEDA"/>
+  <rect x="186" y="350" width="104" height="18" rx="9" fill="#C9CEDA"/>
+</svg>
